@@ -1,227 +1,312 @@
-import streamlit as st
-import datetime
-import pandas as pd
-import os
-import plotly.express as px
-import plotly.graph_objects as go
-from fpdf import FPDF
-from streamlit_folium import st_folium
-import folium
-import sqlite3
-import hashlib
+diff --git a/C:\Users\hp\Documents\Codex\2026-05-17\new-chat\app.py b/C:\Users\hp\Documents\Codex\2026-05-17\new-chat\app.py
+new file mode 100644
+--- /dev/null
++++ b/C:\Users\hp\Documents\Codex\2026-05-17\new-chat\app.py
+@@ -0,0 +1,306 @@
++import datetime
++import os
++
++import pandas as pd
++import requests
++import streamlit as st
++from fpdf import FPDF
++
++from engine import CityZone, SmartCityStrategic
++
++
++st.set_page_config(page_title="AI Smart Energy", layout="wide")
++
++API_KEY = os.getenv("OPENWEATHER_API_KEY", "YOUR_API_KEY")
++DATA_FILE = "energy_log.csv"
++
++
++st.markdown(
++    """
++<style>
++body {
++    background-color: #0E1117;
++    color: white;
++}
++
++.title {
++    font-size: 42px;
++    font-weight: bold;
++    background: linear-gradient(90deg,#00FF9C,#00CFFF);
++    -webkit-background-clip: text;
++    -webkit-text-fill-color: transparent;
++}
++
++.card {
++    background: linear-gradient(145deg, #1c1f26, #111318);
++    padding: 20px;
++    border-radius: 20px;
++    box-shadow: 0px 4px 20px rgba(0,0,0,0.5);
++    transition: 0.3s;
++    text-align:center;
++}
++
++.card:hover {
++    transform: scale(1.02);
++}
++
++.green {
++    color:#00FF9C;
++}
++
++.red {
++    color:#ff4b4b;
++}
++
++.small-text {
++    color: #AAAAAA;
++    font-size: 14px;
++}
++</style>
++""",
++    unsafe_allow_html=True,
++)
++
++
++def get_weather(city, country):
++    if not city or not country or API_KEY == "YOUR_API_KEY":
++        return 25, 2, "clear sky"
++
++    try:
++        url = "https://api.openweathermap.org/data/2.5/weather"
++        params = {
++            "q": f"{city},{country}",
++            "appid": API_KEY,
++            "units": "metric",
++        }
++        response = requests.get(url, params=params, timeout=10)
++        response.raise_for_status()
++        data = response.json()
++
++        temp = data["main"]["temp"]
++        clouds = data["clouds"]["all"] / 10
++        weather = data["weather"][0]["description"]
++        return temp, clouds, weather
++    except requests.RequestException:
++        return 25, 2, "clear sky"
++    except (KeyError, IndexError, TypeError):
++        return 25, 2, "clear sky"
++
++
++def generate_pdf(user, res, co2, weather):
++    pdf = FPDF()
++    pdf.add_page()
++
++    pdf.set_font("Arial", "B", 18)
++    pdf.cell(0, 10, "AI SMART ENERGY REPORT", ln=True)
++
++    pdf.ln(10)
++    pdf.set_font("Arial", size=12)
++
++    pdf.cell(0, 10, f"Company: {user['company']}", ln=True)
++    pdf.cell(0, 10, f"Manager: {user['name']}", ln=True)
++    pdf.cell(0, 10, f"Country: {user['country']}", ln=True)
++    pdf.cell(0, 10, f"City: {user['city']}", ln=True)
++
++    pdf.ln(5)
++
++    pdf.cell(0, 10, f"Solar Production: {res['solar']} kW", ln=True)
++    pdf.cell(0, 10, f"Current Load: {res['load']} kW", ln=True)
++    pdf.cell(0, 10, f"Battery Level: {res['battery']}%", ln=True)
++    pdf.cell(0, 10, f"CO2 Saved: {co2} kg", ln=True)
++    pdf.cell(0, 10, f"Weather: {weather}", ln=True)
++
++    pdf.ln(5)
++    pdf.cell(0, 10, f"Generated: {datetime.datetime.now()}", ln=True)
++
++    return bytes(pdf.output(dest="S"))
++
++
++def save_data(res):
++    row = {
++        "time": datetime.datetime.now().isoformat(timespec="seconds"),
++        "solar": res["solar"],
++        "load": res["load"],
++        "battery": res["battery"],
++    }
++
++    if os.path.exists(DATA_FILE):
++        df = pd.read_csv(DATA_FILE)
++        df = pd.concat([df, pd.DataFrame([row])], ignore_index=True)
++    else:
++        df = pd.DataFrame([row])
++
++    df.to_csv(DATA_FILE, index=False)
++
++
++def generate_real_zones(company_type):
++    text = company_type.lower()
++
++    if "factory" in text or "usine" in text or "مصنع" in text:
++        return [
++            CityZone("Production Line", 1, 1500),
++            CityZone("Cooling System", 2, 800),
++            CityZone("Smart Lighting", 3, 350),
++        ]
++
++    if "hospital" in text or "hopital" in text or "مستشفى" in text:
++        return [
++            CityZone("ICU", 1, 1200),
++            CityZone("Emergency", 1, 900),
++            CityZone("Rooms", 2, 500),
++        ]
++
++    if "hotel" in text or "فندق" in text:
++        return [
++            CityZone("Rooms", 1, 1000),
++            CityZone("Restaurant", 2, 600),
++            CityZone("Pool", 3, 400),
++        ]
++
++    return [
++        CityZone("Main System", 1, 900),
++        CityZone("Office", 2, 500),
++        CityZone("Lighting", 3, 300),
++    ]
++
++
++if "user" not in st.session_state:
++    st.session_state.user = None
++
++if "system" not in st.session_state:
++    st.session_state.system = None
++
++
++if st.session_state.user is None:
++    st.markdown(
++        '<div class="title">AI Smart Energy Platform</div>',
++        unsafe_allow_html=True,
++    )
++
++    st.write("## مرحبا")
++    st.write("### دخل معلومات المؤسسة ديالك")
++
++    with st.form("user_form"):
++        name = st.text_input("الاسم الكامل")
++        company = st.text_input("الشركة / النشاط", placeholder="Factory / Hospital / Hotel ...")
++        email = st.text_input("البريد الإلكتروني")
++        country = st.text_input("الدولة")
++        city = st.text_input("المدينة")
++
++        submit = st.form_submit_button("دخول للمنصة")
++
++        if submit:
++            st.session_state.user = {
++                "name": name.strip() or "Manager",
++                "company": company.strip() or "Company",
++                "email": email.strip(),
++                "country": country.strip() or "Morocco",
++                "city": city.strip() or "Casablanca",
++            }
++
++            sys = SmartCityStrategic()
++            zones = generate_real_zones(st.session_state.user["company"])
++
++            for zone in zones:
++                sys.add_zone(zone)
++
++            st.session_state.system = sys
++            st.rerun()
++
++    st.stop()
++
++
++user = st.session_state.user
++system = st.session_state.system
++
++temp, clouds, weather = get_weather(user["city"], user["country"])
++hour = datetime.datetime.now().hour
++
++res = system.control_center(hour, temp, clouds)
++co2 = system.calculate_co2_saved(res["solar"])
++tips = system.get_smart_recommendation(res, hour, "English")
++
++save_data(res)
++
++
++st.markdown(f'<div class="title">{user["company"]}</div>', unsafe_allow_html=True)
++st.write(f"Welcome {user['name']} | {user['city']}, {user['country']}")
++st.write(f"Current Weather: **{weather}** | {temp}°C")
++
++
++def card(title, value):
++    st.markdown(
++        f"""
++    <div class="card">
++        <h4>{title}</h4>
++        <h2 class="green">{value}</h2>
++    </div>
++    """,
++        unsafe_allow_html=True,
++    )
++
++
++c1, c2, c3, c4 = st.columns(4)
++
++with c1:
++    card("Solar Production", f"{res['solar']} kW")
++
++with c2:
++    card("Current Load", f"{res['load']} kW")
++
++with c3:
++    card("Battery", f"{res['battery']}%")
++
++with c4:
++    card("CO2 Saved", f"{co2} kg")
++
++st.divider()
++
++st.subheader("Smart Energy Zones")
++
++cols = st.columns(len(res["decisions"]))
++
++for i, (name, status) in enumerate(res["decisions"].items()):
++    color = "green" if "ON" in status or status == "LIMITED" else "red"
++
++    with cols[i]:
++        st.markdown(
++            f"""
++        <div class="card">
++            <h4>{name}</h4>
++            <h2 class="{color}">{status}</h2>
++        </div>
++        """,
++            unsafe_allow_html=True,
++        )
++        st.caption(system.explain_decision(name, status, res["battery"]))
++
++st.divider()
++
++st.subheader("AI Recommendations")
++
++for tip in tips:
++    st.info(tip)
++
++st.divider()
++
++st.subheader("Live Energy Analytics")
++
++if os.path.exists(DATA_FILE):
++    df = pd.read_csv(DATA_FILE)
++    st.line_chart(df[["solar", "load", "battery"]])
++
++st.divider()
++
++st.subheader("Smart Report")
++
++pdf = generate_pdf(user, res, co2, weather)
++
++st.download_button(
++    "Download PDF Report",
++    pdf,
++    file_name="AI_Energy_Report.pdf",
++    mime="application/pdf",
++)
++
++st.toast(f"System Running | Battery {res['battery']}%")
 
-# استيراد المحرك المطور (كودك الأصلي)
-from engine import SmartCityStrategic, CityZone
-
-# ================= 1. DATABASE + LOGIN =================
-@st.cache_resource
-def init_db():
-    conn = sqlite3.connect('enterprise_users.db')
-    c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS users 
-                 (username TEXT PRIMARY KEY, password TEXT, 
-                  company TEXT, is_pro INTEGER DEFAULT 0, 
-                  analysis_count INTEGER DEFAULT 0)''')
-    conn.commit()
-    conn.close()
-
-def hash_password(password):
-    return hashlib.sha256(password.encode()).hexdigest()
-
-init_db()
-
-# ================= 2. LOGIN SYSTEM =================
-if "user" not in st.session_state:
-    st.session_state.user = None
-    st.session_state.is_pro = False
-    st.session_state.analysis_count = 0
-
-def check_login():
-    if st.session_state.user:
-        return True
-    
-    st.title("⚡ AI Energy Enterprise v2.0")
-    st.subheader("Professional Infrastructure Management System")
-    
-    tab1, tab2 = st.tabs(["دخول", "حساب جديد"])
-    
-    with tab1:
-        with st.form("login"):
-            username = st.text_input("اسم المستخدم")
-            password = st.text_input("كلمة السر", type="password")
-            if st.form_submit_button("دخول"):
-                conn = sqlite3.connect('enterprise_users.db')
-                c = conn.cursor()
-                c.execute("SELECT * FROM users WHERE username=? AND password=?",
-                         (username, hash_password(password)))
-                user_data = c.fetchone()
-                conn.close()
-                
-                if user_data:
-                    st.session_state.user = {"username": username, "company": user_data[2]}
-                    st.session_state.is_pro = bool(user_data[3])
-                    st.session_state.analysis_count = user_data[4]
-                    st.success("✅ تم تسجيل الدخول!")
-                    st.rerun()
-                else:
-                    st.error("❌ خطأ في اسم المستخدم أو كلمة السر!")
-    
-    with tab2:
-        with st.form("signup"):
-            new_username = st.text_input("اسم مستخدم جديد")
-            new_password = st.text_input("كلمة سر", type="password")
-            company = st.text_input("اسم الشركة")
-            if st.form_submit_button("إنشاء حساب"):
-                try:
-                    conn = sqlite3.connect('enterprise_users.db')
-                    c = conn.cursor()
-                    c.execute("INSERT INTO users (username, password, company) VALUES (?, ?, ?)",
-                             (new_username, hash_password(new_password), company))
-                    conn.commit()
-                    conn.close()
-                    st.success("✅ تم إنشاء الحساب! الآن قم بتسجيل الدخول.")
-                except:
-                    st.error("❌ اسم مستخدم موجود بالفعل!")
-    
-    st.stop()
-
-# ================= 3. CONFIG & STYLE (كودك الأصلي) =================
-st.set_page_config(page_title="AI Energy Enterprise v2.0", layout="wide")
-check_login()  # التحقق من تسجيل الدخول
-
-st.markdown("""
-<style>
-    .main { background: #050816; color: white; }
-    .stMetric { background: rgba(255,255,255,0.05); padding: 15px; border-radius: 15px; border: 1px solid #00FF9C; }
-    .card-stat { padding: 20px; border-radius: 20px; text-align: center;
-        background: rgba(255,255,255,0.03); border: 1px solid rgba(0,255,156,0.2); }
-    h1, h2, h3 { color: #00FF9C !important; }
-    .pro-badge { background: #FFD700; color: #000; padding: 5px 10px; border-radius: 20px; font-weight: bold; }
-</style>
-""", unsafe_allow_html=True)
-
-# ================= 4. INITIALIZE SYSTEM (كودك الأصلي + تحسين) =================
-if "system" not in st.session_state:
-    st.session_state.system = SmartCityStrategic()
-    st.session_state.user_data = st.session_state.user
-
-# ================= 5. SIDEBAR PRO STATUS =================
-st.sidebar.title(f"👤 {st.session_state.user['username']}")
-st.sidebar.markdown(f"🏢 {st.session_state.user_data['company']}")
-
-if st.session_state.is_pro:
-    st.sidebar.markdown('<div class="pro-badge">⭐ PRO</div>', unsafe_allow_html=True)
-    st.sidebar.success("تحليلات غير محدودة + تقارير متقدمة")
-else:
-    st.sidebar.warning(f"تحليلات متبقية: {5 - st.session_state.analysis_count}/5")
-    if st.sidebar.button("⭐ ترقية Pro (99$/سنة)"):
-        st.info("🚀 سيتم إعداد الدفع قريباً! تواصل: support@aienergy.com")
-
-# ================= 6. MAIN DASHBOARD (كودك الأصلي محسن) =================
-sys = st.session_state.system
-user = st.session_state.user_data
-
-# محاكاة الوقت والطقس
-hour = st.sidebar.slider("🕐 الساعة", 0, 23, datetime.datetime.now().hour)
-clouds = st.sidebar.slider("☁️ تغطية السحب (0-10)", 0, 10, 2)
-
-# تحديث عدد التحليلات للحسابات المجانية
-if not st.session_state.is_pro:
-    st.session_state.analysis_count += 1
-    if st.session_state.analysis_count >= 5:
-        st.error("❌ وصلت للحد الأقصى! قم بالترقية إلى Pro")
-        st.stop()
-
-# معالجة البيانات (كودك الأصلي)
-res = sys.control_center(hour, 25, clouds)
-
-# HEADER
-st.title(f"🏢 {user['company']} - لوحة التحكم الذكية")
-st.metric("الحالة", "✅ AI محسن", delta="Real-time")
-
-# KPIs (كودك الأصلي محسن)
-m1, m2, m3, m4 = st.columns(4)
-with m1:
-    st.metric("☀️ إنتاج الطاقة الشمسية", f"{res['solar']} kW", f"{res['efficiency']}%")
-with m2:
-    st.metric("⚡ الحمل الفعلي", f"{res['load']} kW", "-15% توفير AI")
-with m3:
-    st.metric("💰 التوفير المالي", f"${res['money_saved']}", "يومياً")
-with m4:
-    st.metric("🌿 CO2 محفوظ", f"{res['co2_saved']} kg", "صديق البيئة")
-
-# بطارية (كودك الأصلي)
-st.markdown("### 🔋 حالة البطارية الذكية")
-b_color = "#00FF9C" if res['battery'] > 40 else "#FF9500" if res['battery'] > 20 else "#FF4B4B"
-st.markdown(f"""
-    <div style="width:100%; height:40px; background:#222; border-radius:15px; overflow:hidden;">
-        <div style="width:{res['battery']}%; height:40px; background:{b_color}; 
-                    border-radius:15px; display:flex; align-items:center; justify-content:center; font-weight:bold;">
-            {res['battery']}%
-        </div>
-    </div>
-""", unsafe_allow_html=True)
-
-# الرسوم البيانية + المناطق (كودك الأصلي)
-col_left, col_right = st.columns([2, 1])
-
-with col_left:
-    st.write("### 📈 التحليلات الحية")
-    chart_data = pd.DataFrame({
-        'الوقت': pd.date_range(start='today', periods=24, freq='H'),
-        'الطاقة الشمسية': [res['solar'] * (math.sin(i/24*3.14)) for i in range(24)],
-        'الحمل': [res['load']] * 24
-    })
-    fig = px.line(chart_data, x='الوقت', y=['الطاقة الشمسية', 'الحمل'], 
-                  title="24 ساعة قادمة", markers=True)
-    st.plotly_chart(fig, use_container_width=True)
-
-with col_right:
-    st.write("### 🏭 قرارات المناطق الذكية")
-    for zone, status in res['decisions'].items():
-        color = "#00FF9C" if "ON" in status else "#FF4B4B"
-        st.markdown(f"""
-            <div style="padding:12px; margin:5px 0; background:rgba(0,255,156,0.1); 
-                        border-radius:10px; border-left:4px solid {color}">
-                <b>{zone}</b><br><small style="color:{color}">{status}</small>
-            </div>
-        """, unsafe_allow_html=True)
-
-# شرح AI
-with st.expander("🤖 شرح قرارات الذكاء الاصطناعي"):
-    for zone, status in res['decisions'].items():
-        st.info(sys.explain_decision(zone, status, res['battery']))
-
-# PDF Report (كودك الأصلي محسن)
-def generate_enterprise_pdf(user, res):
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Arial", 'B', 20)
-    pdf.set_text_color(0, 255, 156)
-    pdf.cell(0, 15, f"AI ENERGY ENTERPRISE REPORT", ln=True, align='C')
-    pdf.set_text_color(0, 0, 0)
-    pdf.set_font("Arial", 'B', 16)
-    pdf.cell(0, 10, f"{user['company']}", ln=True, align='C')
-    pdf.ln(10)
-    
-    pdf.set_font("Arial", '', 12)
-    pdf.cell(0, 10, f"التاريخ: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}", ln=True)
-    pdf.cell(0, 10, f"التوفير: ${res['money_saved']}", ln=True)
-    pdf.cell(0, 10, f"كفاءة النظام: {res['efficiency']}%", ln=True)
-    pdf.cell(0, 10, f"CO2 محفوظ: {res['co2_saved']} كجم", ln=True)
-    
-    return pdf.output(dest="S").encode("latin-1")
-
-if st.button("📄 تحميل تقرير PDF الاحترافي", use_container_width=True):
-    pdf_bytes = generate_enterprise_pdf(user, res)
-    st.download_button("⬇️ تحميل التقرير", pdf_bytes, 
-                      file_name=f"{user['company']}_energy_report.pdf", use_container_width=True)
-
-# Footer
-st.markdown("---")
-st.markdown("""
-**✨ AI Energy Enterprise** | للشركات المتوسطة والكبيرة | 
-تواصل: support@aienergyenterprise.com | Pro: غير محدود
-""")
-
-st.toast("تم تحديث البيانات بنجاح! ✅", icon="⚡")
