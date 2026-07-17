@@ -2,6 +2,7 @@ import math
 
 
 class CityZone:
+
     def __init__(self, name, priority, consumption):
         self.name = name
         self.priority = priority  # 1: Critical, 2: Important, 3: Non-Essential
@@ -10,6 +11,7 @@ class CityZone:
 
 
 class SmartCityStrategic:
+
     def __init__(self):
         self.zones = []
         self.battery_capacity = 5000  # kWh
@@ -34,8 +36,11 @@ class SmartCityStrategic:
     def update_battery(self, solar, load):
         """Update battery charge based on production and load."""
         net_energy = solar - load
+        # تحويل الأحمال (kW) إلى طاقة مستهلكة في ساعة (kWh) افتراضياً
         self.current_charge += net_energy
-        self.current_charge = max(0, min(self.battery_capacity, self.current_charge))
+        self.current_charge = max(
+            0, min(self.battery_capacity, self.current_charge)
+        )
         return round((self.current_charge / self.battery_capacity) * 100, 1)
 
     def optimize_infrastructure(self, solar, battery_pct):
@@ -77,9 +82,28 @@ class SmartCityStrategic:
 
     def control_center(self, hour, temp, clouds):
         solar = self.get_solar_production(hour, clouds)
-        active_load = sum(z.consumption for z in self.zones if z.active)
+
+        # 1. نحسب النسبة الحالية للبطارية قبل التحديث لمعرفة الحالة الحالية
+        current_pct = round(
+            (self.current_charge / self.battery_capacity) * 100, 1
+        )
+
+        # 2. ناخدو القرارات بناء على الوضع الحالي
+        decisions = self.optimize_infrastructure(solar, current_pct)
+
+        # 3. دابا نحسبو الأحمال الحقيقية بناء على الـ zones اللي بقاو active
+        active_load = sum(
+            (
+                z.consumption * 0.5
+                if decisions.get(z.name) == "LIMITED"
+                else z.consumption
+            )
+            for z in self.zones
+            if z.active
+        )
+
+        # 4. نحدثو البطارية بالأحمال الفعالية الجديدة
         battery_pct = self.update_battery(solar, active_load)
-        decisions = self.optimize_infrastructure(solar, battery_pct)
 
         co2_saved = self.calculate_co2_saved(solar)
         money_saved = self.calculate_roi(solar)
@@ -91,7 +115,9 @@ class SmartCityStrategic:
             "decisions": decisions,
             "co2_saved": co2_saved,
             "money_saved": money_saved,
-            "efficiency": round((solar / active_load * 100), 1) if active_load > 0 else 100,
+            "efficiency": (
+                round((solar / active_load * 100), 1) if active_load > 0 else 100
+            ),
         }
 
     def explain_decision(self, zone_name, status, battery_pct):
@@ -111,21 +137,33 @@ class SmartCityStrategic:
         recommendations = []
 
         if res["battery"] < 20:
-            recommendations.append("Battery is critically low. Keep only priority zones active.")
+            recommendations.append(
+                "Battery is critically low. Keep only priority zones active."
+            )
         elif res["battery"] < 40:
-            recommendations.append("Battery is moderate. Use eco mode for non-essential zones.")
+            recommendations.append(
+                "Battery is moderate. Use eco mode for non-essential zones."
+            )
         else:
-            recommendations.append("Battery level is healthy. Current energy strategy is stable.")
+            recommendations.append(
+                "Battery level is healthy. Current energy strategy is stable."
+            )
 
         if res["solar"] < res["load"]:
-            recommendations.append("Solar production is below demand. Consider reducing optional loads.")
+            recommendations.append(
+                "Solar production is below demand. Consider reducing optional loads."
+            )
         else:
-            recommendations.append("Solar production is covering current demand efficiently.")
+            recommendations.append(
+                "Solar production is covering current demand efficiently."
+            )
 
         if hour >= 17:
-            recommendations.append("Sunset is approaching. Preserve battery for evening operations.")
+            recommendations.append(
+                "Sunset is approaching. Preserve battery for evening operations."
+            )
 
-        recommendations.append(f"Estimated savings: {res['money_saved']} from solar energy usage.")
+        recommendations.append(
+            f"Estimated savings: {res['money_saved']} DH from solar energy usage."
+        )
         return recommendations
-
-
