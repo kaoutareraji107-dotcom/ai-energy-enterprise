@@ -15,12 +15,48 @@ class CityZone:
 
 # ================= SMART SYSTEM =================
 class SmartCityStrategic:
-    def __init__(self):
-        self.zones = []
-        # إضافة خصائص حقيقية للبطارية للحفاظ على حالة الشحن بمرور الوقت
-        self.battery_capacity = 5000  # kWh
-        self.current_charge = 2500    # kWh (تبدأ بـ 50%)
+    # ================= MACHINE LEARNING DEMAND FORECASTING =================
+    def train_demand_model(self, data_file="energy_log.csv"):
+        """تدريب نموذج الذكاء الاصطناعي للتنبؤ باستهلاك الغد"""
+        # 1. إعداد بيانات تدريب افتراضية في حالة ما كانش الملف عامر بزااف
+        if os.path.exists(data_file) and len(pd.read_csv(data_file)) > 10:
+            df = pd.read_csv(data_file)
+            # هنا نفترض أننا جمعنا درجات حرارة وغيوم سابقة، وإلا غانولدوا بيانات متناسقة للتدريب
+            X = np.array([[random.randint(15, 38), random.randint(0, 10)] for _ in range(len(df))])
+            y = df['load'].values
+        else:
+            # توليد بيانات سيناريوهات (Synthetic Data) متوافقة مع منطق السيستم للتدريب الأولي
+            np.random.seed(42)
+            X = np.random.uniform(15, 40, (100, 2)) # 100 يوم: [الحرارة, الغيوم]
+            X[:, 1] = np.random.uniform(0, 10, 100)
+            
+            # الاستهلاك كيزيد مع الحرارة العالية (تبريد) ومع الغيوم (إضاءة)
+            y = 500 + (X[:, 0] * 25) + (X[:, 1] * 40) + np.random.normal(0, 50, 100)
+        
+        # 2. بناء وتدريب موديل Random Forest مبسط وسريع
+        model = RandomForestRegressor(n_estimators=50, random_state=42)
+        model.fit(X, y)
+        return model
 
+    def forecast_tomorrow_demand(self, tomorrow_temp, tomorrow_clouds):
+        """توقع حجم استهلاك الطاقة (kW) ليوم غد بناءً على حالة الطقس المتوقعة"""
+        model = self.train_demand_model()
+        
+        # التنبؤ بقيمة الغد
+        input_data = np.array([[tomorrow_temp, tomorrow_clouds]])
+        prediction = model.predict(input_data)[0]
+        
+        # توليد منحنى بياني متوقع لـ 24 ساعة ديال غدا (باش نرسموه فـ المبيان)
+        hours = list(range(24))
+        hourly_forecast = []
+        for h in hours:
+            # محاكاة توزيع الحمل على ساعات اليوم (الذروة تكون وسط النهار)
+            time_factor = math.sin((h - 4) * math.pi / 14) 
+            time_factor = max(0.4, (time_factor + 1) / 2)
+            hourly_load = prediction * time_factor + random.randint(-50, 50)
+            hourly_forecast.append(round(max(200, hourly_load), 2))
+            
+        return round(prediction, 2), hourly_forecast
     # ================= ADD ZONE =================
     def add_zone(self, zone):
         self.zones.append(zone)
