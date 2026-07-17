@@ -15,25 +15,26 @@ class CityZone:
 
 # ================= SMART SYSTEM =================
 class SmartCityStrategic:
+    
+    # 🟢 هاد الجزء هو لي كان ناقص وخاصو يرجع هنا فوراً
+    def __init__(self):
+        self.zones = []
+        self.battery_capacity = 5000  # kWh
+        self.current_charge = 2500    # kWh
+
     # ================= MACHINE LEARNING DEMAND FORECASTING =================
     def train_demand_model(self, data_file="energy_log.csv"):
         """تدريب نموذج الذكاء الاصطناعي للتنبؤ باستهلاك الغد"""
-        # 1. إعداد بيانات تدريب افتراضية في حالة ما كانش الملف عامر بزااف
         if os.path.exists(data_file) and len(pd.read_csv(data_file)) > 10:
             df = pd.read_csv(data_file)
-            # هنا نفترض أننا جمعنا درجات حرارة وغيوم سابقة، وإلا غانولدوا بيانات متناسقة للتدريب
             X = np.array([[random.randint(15, 38), random.randint(0, 10)] for _ in range(len(df))])
             y = df['load'].values
         else:
-            # توليد بيانات سيناريوهات (Synthetic Data) متوافقة مع منطق السيستم للتدريب الأولي
             np.random.seed(42)
-            X = np.random.uniform(15, 40, (100, 2)) # 100 يوم: [الحرارة, الغيوم]
+            X = np.random.uniform(15, 40, (100, 2))
             X[:, 1] = np.random.uniform(0, 10, 100)
-            
-            # الاستهلاك كيزيد مع الحرارة العالية (تبريد) ومع الغيوم (إضاءة)
             y = 500 + (X[:, 0] * 25) + (X[:, 1] * 40) + np.random.normal(0, 50, 100)
         
-        # 2. بناء وتدريب موديل Random Forest مبسط وسريع
         model = RandomForestRegressor(n_estimators=50, random_state=42)
         model.fit(X, y)
         return model
@@ -41,22 +42,19 @@ class SmartCityStrategic:
     def forecast_tomorrow_demand(self, tomorrow_temp, tomorrow_clouds):
         """توقع حجم استهلاك الطاقة (kW) ليوم غد بناءً على حالة الطقس المتوقعة"""
         model = self.train_demand_model()
-        
-        # التنبؤ بقيمة الغد
         input_data = np.array([[tomorrow_temp, tomorrow_clouds]])
         prediction = model.predict(input_data)[0]
         
-        # توليد منحنى بياني متوقع لـ 24 ساعة ديال غدا (باش نرسموه فـ المبيان)
         hours = list(range(24))
         hourly_forecast = []
         for h in hours:
-            # محاكاة توزيع الحمل على ساعات اليوم (الذروة تكون وسط النهار)
             time_factor = math.sin((h - 4) * math.pi / 14) 
             time_factor = max(0.4, (time_factor + 1) / 2)
             hourly_load = prediction * time_factor + random.randint(-50, 50)
             hourly_forecast.append(round(max(200, hourly_load), 2))
             
         return round(prediction, 2), hourly_forecast
+
     # ================= ADD ZONE =================
     def add_zone(self, zone):
         self.zones.append(zone)
@@ -67,7 +65,6 @@ class SmartCityStrategic:
             peak = 1800
             curve = math.sin((hour - 6) * math.pi / 12)
             solar = peak * curve
-            # تعديل تأثير الغيوم ليكون نسبي منطقي (Clouds من 0 لـ 10)
             cloud_impact = (clouds / 10) * 0.6
             solar *= (1 - cloud_impact)
             return max(0, int(solar))
@@ -75,7 +72,6 @@ class SmartCityStrategic:
 
     # ================= LOAD CALCULATION =================
     def calculate_total_load(self, decisions=None):
-        """حساب الأحمال الفعلية بناءً على حالة المناطق الحالية أو القرارات المتخذة"""
         total = 0
         for zone in self.zones:
             if decisions and zone.name in decisions:
@@ -83,8 +79,7 @@ class SmartCityStrategic:
                 if status == "ON":
                     total += zone.consumption
                 elif status == "LIMITED":
-                    total += zone.consumption * 0.5  # نصف الاستهلاك في وضع الموازنة
-                # لو OFF كيزيد 0
+                    total += zone.consumption * 0.5
             else:
                 if zone.active:
                     total += zone.consumption
@@ -92,21 +87,14 @@ class SmartCityStrategic:
 
     # ================= BATTERY INTELLIGENCE =================
     def update_and_get_battery_pct(self, solar, actual_load):
-        """تحديث السعة الحقيقية للبطارية بناءً على الفائض أو النقص الفعلي في الطاقة"""
         net_energy = solar - actual_load
-        # محاكاة التحديث (الإنتاج بالكيلوواط في الساعة)
         self.current_charge += net_energy
-        # نضمن أن الشحن ما يفوتش السعة وما ينزلش تحت الصفر
         self.current_charge = max(0, min(self.battery_capacity, self.current_charge))
-        
-        # إرجاع النسبة المئوية
         return round((self.current_charge / self.battery_capacity) * 100, 1)
 
     # ================= AI DECISIONS =================
     def optimize_zones(self, solar, current_battery_pct):
-        """اتخاذ القرارات بناءً على الطاقة الشمسية المتاحة ونسبة البطارية الحالية"""
         decisions = {}
-        # حساب مجموع الأحمال المحتملة لو كانت كل المناطق مشغلة
         total_potential_load = sum(z.consumption for z in self.zones)
 
         for zone in self.zones:
@@ -135,22 +123,11 @@ class SmartCityStrategic:
 
     # ================= MAIN AI CONTROL =================
     def control_center(self, hour, temp, clouds):
-        # 1. حساب إنتاج الطاقة الشمسية أولاً
         solar = self.get_solar(hour, clouds)
-        
-        # 2. معرفة نسبة البطارية الحالية قبل أخذ القرار
         current_pct = round((self.current_charge / self.battery_capacity) * 100, 1)
-        
-        # 3. الـ AI كياخد القرار بناءً على المعطيات الحالية
         decisions = self.optimize_zones(solar, current_pct)
-        
-        # 4. دابا كنحسبو الـ Load الفعلي (الحقيقي) اللي غيتستهلك بناء على القرارات
         actual_load = self.calculate_total_load(decisions)
-        
-        # 5. كنحدثو البطارية بالـ Load الفعلي الجديد ونحصلو على النسبة المحدثة
         battery_pct = self.update_and_get_battery_pct(solar, actual_load)
-        
-        # 6. حساب الكفاءة العامة للنظام
         efficiency = self.calculate_efficiency(solar, actual_load)
 
         return {
@@ -177,7 +154,6 @@ class SmartCityStrategic:
     # ================= AI RECOMMENDATIONS =================
     def get_smart_recommendation(self, res, hour, language="EN"):
         tips = []
-
         if res["battery"] < 30:
             tips.append("🔋 Battery optimization recommended: Critical levels imminent.")
         if res["solar"] > res["load"]:
@@ -193,7 +169,6 @@ class SmartCityStrategic:
 
         if not tips:
             tips.append("⚡ AI system running normally.")
-
         return tips
 
     # ================= AI EXPLAINABILITY =================
