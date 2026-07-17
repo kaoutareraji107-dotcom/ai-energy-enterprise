@@ -1,260 +1,291 @@
-import datetime
-import os
-
-from fpdf import FPDF
-import pandas as pd
-import requests
 import streamlit as st
+import datetime
+import requests
+import pandas as pd
+import os
+from fpdf import FPDF
+import plotly.express as px
+import folium
+from streamlit_folium import st_folium
 
-from engine import CityZone, SmartCityStrategic
+from engine import SmartCityStrategic, CityZone
 
-st.set_page_config(page_title="AI Smart Energy", layout="wide")
+# ================= CONFIG =================
+st.set_page_config(
+    page_title="AI Energy Enterprise ⚡",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-API_KEY = os.getenv("OPENWEATHER_API_KEY", "YOUR_API_KEY")
+API_KEY = "YOUR_API_KEY"
 DATA_FILE = "energy_log.csv"
 
-st.markdown(
-    """
+# ================= UI STYLE =================
+st.markdown("""
 <style>
-body {
-    background-color: #0E1117;
+html, body, [class*="css"] {
+    background: #050816;
     color: white;
+    font-family: 'Segoe UI';
+}
+.main {
+    background: linear-gradient(180deg,#050816,#0f172a);
 }
 .title {
-    font-size: 42px;
-    font-weight: bold;
-    background: linear-gradient(90deg,#00FF9C,#00CFFF);
+    font-size: 48px;
+    font-weight: 800;
+    text-align: center;
+    background: linear-gradient(90deg,#00FF9C,#00CFFF,#8B5CF6);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
 }
+.subtitle {
+    text-align: center;
+    color: rgba(255,255,255,0.7);
+    margin-bottom: 20px;
+}
 .card {
-    background: linear-gradient(145deg, #1c1f26, #111318);
-    padding: 20px;
-    border-radius: 20px;
-    box-shadow: 0px 4px 20px rgba(0,0,0,0.5);
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 24px;
+    padding: 24px;
+    text-align: center;
+    backdrop-filter: blur(14px);
+    box-shadow: 0 8px 30px rgba(0,0,0,0.45);
     transition: 0.3s;
-    text-align:center;
 }
 .card:hover {
-    transform: scale(1.02);
+    transform: translateY(-4px) scale(1.02);
+    border: 1px solid #00FF9C;
 }
-.green { color:#00FF9C; }
-.red { color:#ff4b4b; }
+.green { color: #00FF9C; }
+.red { color: #ff4b4b; }
+.blue { color: #00CFFF; }
+.purple { color: #8B5CF6; }
 </style>
-""",
-    unsafe_allow_html=True,
-)
+""", unsafe_allow_html=True)
 
-
+# ================= WEATHER =================
 def get_weather(city, country):
-    if not city or not country or API_KEY == "YOUR_API_KEY":
-        return 25, 2, "clear sky"
+    if API_KEY == "YOUR_API_KEY" or not city:
+        return 25, 2
     try:
-        url = "https://api.openweathermap.org/data/2.5/weather"
-        params = {
-            "q": f"{city},{country}",
-            "appid": API_KEY,
-            "units": "metric",
-        }
-        response = requests.get(url, params=params, timeout=10)
-        response.raise_for_status()
-        data = response.json()
+        url = f"https://api.openweathermap.org/data/2.5/weather?q={city},{country}&appid={API_KEY}&units=metric"
+        data = requests.get(url, timeout=5).json()
         temp = data["main"]["temp"]
         clouds = data["clouds"]["all"] / 10
-        weather = data["weather"][0]["description"]
-        return temp, clouds, weather
-    except Exception:
-        return 25, 2, "clear sky"
+        return temp, clouds
+    except:
+        return 25, 2
 
+# ================= REAL ZONES =================
+def generate_real_zones(company_type):
+    company_type = company_type.lower()
+    if "factory" in company_type or "مصنع" in company_type:
+        return [
+            CityZone("🏭 Production Line", 1, 1500),
+            CityZone("❄️ Cooling System", 2, 800),
+            CityZone("💡 Smart Lighting", 3, 300)
+        ]
+    elif "hospital" in company_type or "مستشفى" in company_type:
+        return [
+            CityZone("🏥 ICU", 1, 1000),
+            CityZone("🚑 Emergency", 1, 900),
+            CityZone("🛏️ Rooms", 2, 500)
+        ]
+    elif "mall" in company_type or "فندق" in company_type:
+        return [
+            CityZone("🛍️ Shops", 1, 1200),
+            CityZone("❄️ Cooling", 2, 700),
+            CityZone("🚗 Parking", 3, 300)
+        ]
+    else:
+        return [
+            CityZone("⚡ Main System", 1, 800),
+            CityZone("🔧 Support", 2, 400)
+        ]
 
-def generate_pdf(user, res, co2, weather):
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Arial", "B", 18)
-    pdf.cell(0, 10, "AI SMART ENERGY REPORT", ln=True)
-    pdf.ln(10)
-    pdf.set_font("Arial", size=12)
-
-    # تنظيف النصوص من أي رموز عربية لتجنب خطأ المكتبة القديمة fpdf
-    def clean(txt):
-        return str(txt).encode("utf-8").decode("ascii", "ignore")
-
-    pdf.cell(0, 10, f"Company: {clean(user['company'])}", ln=True)
-    pdf.cell(0, 10, f"Manager: {clean(user['name'])}", ln=True)
-    pdf.cell(0, 10, f"Country: {clean(user['country'])}", ln=True)
-    pdf.cell(0, 10, f"City: {clean(user['city'])}", ln=True)
-    pdf.ln(5)
-    pdf.cell(0, 10, f"Solar Production: {res['solar']} kW", ln=True)
-    pdf.cell(0, 10, f"Current Load: {res['load']} kW", ln=True)
-    pdf.cell(0, 10, f"Battery Level: {res['battery']}%", ln=True)
-    pdf.cell(0, 10, f"CO2 Saved: {co2} kg", ln=True)
-    pdf.cell(0, 10, f"Weather: {weather}", ln=True)
-    pdf.ln(5)
-    pdf.cell(0, 10, f"Generated: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", ln=True)
-
-    return pdf.output(dest="S").encode("latin-1", errors="ignore")
-
-
+# ================= SAVE DATA =================
 def save_data(res):
+    # نمنع الحفظ المتكرر في نفس الدقيقة لتفادي عشوائية البيانات
+    now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    if "last_log" in st.session_state and st.session_state.last_log == now_str:
+        return
+    st.session_state.last_log = now_str
+
     row = {
-        "time": datetime.datetime.now().isoformat(timespec="seconds"),
+        "time": datetime.datetime.now().strftime("%H:%M:%S"),
         "solar": res["solar"],
         "load": res["load"],
-        "battery": res["battery"],
+        "battery": res["battery"]
     }
+    
     if os.path.exists(DATA_FILE):
         df = pd.read_csv(DATA_FILE)
         df = pd.concat([df, pd.DataFrame([row])], ignore_index=True)
     else:
         df = pd.DataFrame([row])
-    # الاحتفاظ بآخر 50 تسجيلة فقط لكي لا يثقل المبيان
-    df = df.tail(50)
-    df.to_csv(DATA_FILE, index=False)
+        
+    df.tail(30).to_csv(DATA_FILE, index=False) # نحتفظ بآخر 30 سطر فقط
 
+# ================= PDF =================
+def generate_pdf(user, res, co2):
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", size=16)
+    pdf.cell(0, 10, "AI ENERGY ENTERPRISE REPORT", ln=True)
+    pdf.ln(10)
+    pdf.set_font("Arial", size=12)
+    
+    # تفادي مشاكل الترميز للحروف الغريبة
+    def clean(t): return str(t).encode('utf-8').decode('ascii', 'ignore')
+    
+    pdf.cell(0, 10, f"Company: {clean(user['company'])}", ln=True)
+    pdf.cell(0, 10, f"Manager: {clean(user['name'])}", ln=True)
+    pdf.cell(0, 10, f"Location: {clean(user['city'])}", ln=True)
+    pdf.ln(5)
+    pdf.cell(0, 10, f"Solar Production: {res['solar']} kW", ln=True)
+    pdf.cell(0, 10, f"Energy Consumption: {res['load']} kW", ln=True)
+    pdf.cell(0, 10, f"Battery Level: {res['battery']}%", ln=True)
+    pdf.cell(0, 10, f"CO2 Saved: {co2} kg", ln=True)
+    pdf.ln(10)
+    pdf.multi_cell(0, 10, "This report was generated automatically by AI Energy Enterprise Platform.")
+    return pdf.output(dest="S").encode("latin-1", errors="ignore")
 
-def generate_real_zones(company_type):
-    text = company_type.lower()
-    if "factory" in text or "usine" in text or "مصنع" in text:
-        return [
-            CityZone("Production Line", 1, 1500),
-            CityZone("Cooling System", 2, 800),
-            CityZone("Smart Lighting", 3, 350),
-        ]
-    if "hospital" in text or "hopital" in text or "مستشفى" in text:
-        return [
-            CityZone("ICU", 1, 1200),
-            CityZone("Emergency", 1, 900),
-            CityZone("Rooms", 2, 500),
-        ]
-    if "hotel" in text or "فندق" in text:
-        return [
-            CityZone("Rooms", 1, 1000),
-            CityZone("Restaurant", 2, 600),
-            CityZone("Pool", 3, 400),
-        ]
-    return [
-        CityZone("Main System", 1, 900),
-        CityZone("Office", 2, 500),
-        CityZone("Lighting", 3, 300),
-    ]
-
-
+# ================= SESSION =================
 if "user" not in st.session_state:
     st.session_state.user = None
 if "system" not in st.session_state:
-    st.session_state.system = None
+    st.session_state.system = SmartCityStrategic()
 
+# ================= SIDEBAR =================
+st.sidebar.title("🧠 AI Control Center")
+mode = st.sidebar.selectbox("⚙️ System Mode", ["Eco Mode 🌿", "Balanced ⚡", "Performance 🚀"])
+st.sidebar.markdown("---")
+st.sidebar.info("AI Enterprise Dashboard Active ⚡")
+
+# ================= LOGIN =================
 if st.session_state.user is None:
-    st.markdown(
-        '<div class="title">AI Smart Energy Platform</div>',
-        unsafe_allow_html=True,
-    )
-    st.write("## مرحبا")
-    st.write("### دخل معلومات المؤسسة ديالك")
+    st.markdown('<div class="title">⚡ AI Energy Enterprise</div>', unsafe_allow_html=True)
+    st.markdown('<div class="subtitle">Smart Infrastructure • AI • Sustainability 🌍</div>', unsafe_allow_html=True)
 
     with st.form("user_form"):
-        name = st.text_input("الاسم الكامل")
-        company = st.text_input(
-            "الشركة / النشاط", placeholder="Factory / Hospital / Hotel ..."
-        )
-        email = st.text_input("البريد الإلكتروني")
-        country = st.text_input("الدولة")
-        city = st.text_input("المدينة")
-        submit = st.form_submit_button("دخول للمنصة")
+        name = st.text_input("👤 Name")
+        company = st.text_input("🏭 Company")
+        email = st.text_input("📧 Email")
+        country = st.text_input("🌍 Country")
+        city = st.text_input("🏙️ City")
+        submitted = st.form_submit_button("🚀 Launch Platform")
 
-        if submit:
+        if submitted:
             st.session_state.user = {
-                "name": name.strip() or "Manager",
-                "company": company.strip() or "Company",
-                "email": email.strip(),
-                "country": country.strip() or "Morocco",
-                "city": city.strip() or "Casablanca",
+                "name": name or "Manager", "company": company or "Enterprise",
+                "email": email, "country": country or "Morocco", "city": city or "Agadir"
             }
-            sys = SmartCityStrategic()
+            system = SmartCityStrategic()
             zones = generate_real_zones(st.session_state.user["company"])
-            for zone in zones:
-                sys.add_zone(zone)
-            st.session_state.system = sys
+            for z in zones:
+                system.add_zone(z)
+            st.session_state.system = system
             st.rerun()
     st.stop()
 
+# ================= DASHBOARD CORE =================
 user = st.session_state.user
 system = st.session_state.system
 
-temp, clouds, weather = get_weather(user["city"], user["country"])
+temp, clouds = get_weather(user["city"], user["country"])
 hour = datetime.datetime.now().hour
-
 res = system.control_center(hour, temp, clouds)
 co2 = system.calculate_co2_saved(res["solar"])
-tips = system.get_smart_recommendation(res, hour, "English")
-
+tips = system.get_smart_recommendation(res, hour, "EN")
 save_data(res)
 
-st.markdown(f'<div class="title">{user["company"]}</div>', unsafe_allow_html=True)
-st.write(f"Welcome {user['name']} | {user['city']}, {user['country']}")
-st.write(f"Current Weather: **{weather}** | {temp}°C")
+# ================= HEADER =================
+st.markdown(f'<div class="title">🏭 {user["company"]}</div>', unsafe_allow_html=True)
+st.markdown(f'<div class="subtitle">Welcome {user["name"]} • {user["city"]} • Enterprise Dashboard ⚡</div>', unsafe_allow_html=True)
+st.markdown("---")
 
-
-def card(title, value):
-    st.markdown(
-        f"""
+# ================= CARDS =================
+def card(title, value, color="green"):
+    st.markdown(f"""
     <div class="card">
         <h4>{title}</h4>
-        <h2 class="green">{value}</h2>
+        <h2 class="{color}">{value}</h2>
     </div>
-    """,
-        unsafe_allow_html=True,
-    )
-
+    """, unsafe_allow_html=True)
 
 c1, c2, c3, c4 = st.columns(4)
-with c1:
-    card("Solar Production", f"{res['solar']} kW")
-with c2:
-    card("Current Load", f"{res['load']} kW")
-with c3:
-    card("Battery", f"{res['battery']}%")
-with c4:
-    card("CO2 Saved", f"{co2} kg")
+with c1: card("☀️ Solar", f"{res['solar']} kW", "green")
+with c2: card("⚡ Load", f"{res['load']} kW", "red")
+with c3: card("🔋 Battery", f"{res['battery']}%", "blue")
+with c4: card("🌿 CO2 Saved", f"{co2} kg", "purple")
 
-st.divider()
-st.subheader("Smart Energy Zones")
+# ================= ALERTS =================
+st.markdown("---")
+st.subheader("🔔 Smart Alerts")
+if res["battery"] < 20: st.error("🔋 Critical Battery Level")
+if res["load"] > 1500: st.warning("⚠️ High Consumption Detected")
+if clouds > 7: st.info("☁️ Cloud Density High — Solar Efficiency Reduced")
 
+# ================= ZONES =================
+st.markdown("---")
+st.subheader("⚡ Smart Zones Status")
 cols = st.columns(len(res["decisions"]))
 for i, (name, status) in enumerate(res["decisions"].items()):
-    color = "green" if "ON" in status or status == "LIMITED" else "red"
+    color = "green" if "ON" in status or "LIMITED" in status else "red"
     with cols[i]:
-        st.markdown(
-            f"""
+        st.markdown(f"""
         <div class="card">
             <h4>{name}</h4>
             <h2 class="{color}">{status}</h2>
         </div>
-        """,
-            unsafe_allow_html=True,
-        )
-        st.caption(system.explain_decision(name, status, res["battery"]))
+        """, unsafe_allow_html=True)
 
-st.divider()
-st.subheader("AI Recommendations")
-for tip in tips:
-    st.info(tip)
+# ================= AI EXPLAINABILITY =================
+st.markdown("---")
+st.subheader("🧠 AI Explainability")
+for name, status in res["decisions"].items():
+    explanation = system.explain_decision(name, status, res["battery"]) # تصحيح المعطى هنا ليكون نسبة البطارية
+    st.info(explanation)
 
-st.divider()
-st.subheader("Live Energy Analytics")
+# ================= AI INSIGHTS =================
+st.markdown("---")
+st.subheader("🤖 AI Insights")
+for tip in tips: st.success(tip)
+
+# ================= ANALYTICS =================
+st.markdown("---")
+st.subheader("📈 Live Analytics")
 if os.path.exists(DATA_FILE):
     df = pd.read_csv(DATA_FILE)
-    st.line_chart(df[["solar", "load", "battery"]])
+    fig = px.line(df, x="time", y=["solar", "load", "battery"], 
+                  title="⚡ Enterprise Energy Analytics", template="plotly_dark")
+    st.plotly_chart(fig, use_container_width=True)
 
-st.divider()
-st.subheader("Smart Report")
-pdf_bytes = generate_pdf(user, res, co2, weather)
+# ================= MAP =================
+st.markdown("---")
+st.subheader("🗺️ Smart Infrastructure Map")
+# الإحداثيات الافتراضية لأكادير كمثال متناسق مع الخريطة
+m = folium.Map(location=[30.4278, -9.5981], zoom_start=13)
+folium.Marker([30.4278, -9.5981], tooltip="Solar Station ☀️", popup="AI Solar Infrastructure").add_to(m)
+folium.Marker([30.4178, -9.5881], tooltip="Battery Center 🔋", popup="Smart Battery Storage").add_to(m)
+st_folium(m, width=1200, height=400, key="main_map")
 
+# ================= REPORT =================
+st.markdown("---")
+st.subheader("📄 Enterprise Report")
+
+# الحل الصحيح لزر التحميل المباشر في Streamlit
+pdf_data = generate_pdf(user, res, co2)
 st.download_button(
-    "Download PDF Report",
-    pdf_bytes,
-    file_name="AI_Energy_Report.pdf",
-    mime="application/pdf",
+    label="⬇️ Download Enterprise Report (PDF)",
+    data=pdf_data,
+    file_name="enterprise_report.pdf",
+    mime="application/pdf"
 )
 
-st.toast(f"System Running | Battery {res['battery']}%")
+# ================= FOOTER =================
+st.markdown("---")
+st.markdown("<center>⚡ AI Energy Enterprise • Smart Cities Future • Powered by AI</center>", unsafe_allow_html=True)
+st.toast(f"⚡ System Running | Temp: {temp}°C")
