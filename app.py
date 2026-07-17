@@ -133,18 +133,15 @@ def generate_pdf(user, res, co2):
     pdf = FPDF()
     pdf.add_page()
     
-    # نختاروا خط افتراضي سليم
     pdf.set_font("Helvetica", size=16)
     pdf.cell(0, 10, "AI ENERGY ENTERPRISE REPORT", ln=True)
     pdf.ln(10)
     
     pdf.set_font("Helvetica", size=12)
     
-    # دالة لتنظيف النصوص وحذف الإيموجي أو الحروف الغريبة باش الـ PDF ما يوقعش فيه خطأ ترميز
     def clean_text(text):
         return str(text).encode('ascii', 'ignore').decode('ascii')
 
-    # تنظيف اسم الشركة والمدينة
     clean_company = clean_text(user['company']) or "Enterprise"
     clean_manager = clean_text(user['name']) or "Manager"
     clean_city = clean_text(user['city']) or "City"
@@ -162,9 +159,12 @@ def generate_pdf(user, res, co2):
     
     pdf.multi_cell(0, 10, "This report was generated automatically by AI Energy Enterprise Platform.")
     
-    # في fpdf2 الحديثة، استدعاء الدالة بدون متغيرات يرجع bytes مباشرة وجاهزة للتحميل
-    return pdf.output()
-
+    # 🔴 هنا التعديل السحري: كنحولو المخرج لـ bytes صلبة كيقبلها Streamlit إجباريًا
+    pdf_output = pdf.output()
+    if isinstance(pdf_output, str):
+        return bytes(pdf_output, 'latin-1')
+    else:
+        return bytes(pdf_output)
 # ================= SESSION =================
 if "user" not in st.session_state:
     st.session_state.user = None
