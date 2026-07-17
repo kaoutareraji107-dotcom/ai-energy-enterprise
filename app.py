@@ -132,25 +132,38 @@ def save_data(res):
 def generate_pdf(user, res, co2):
     pdf = FPDF()
     pdf.add_page()
-    pdf.set_font("Arial", size=16)
+    
+    # نختاروا خط افتراضي سليم
+    pdf.set_font("Helvetica", size=16)
     pdf.cell(0, 10, "AI ENERGY ENTERPRISE REPORT", ln=True)
     pdf.ln(10)
-    pdf.set_font("Arial", size=12)
     
-    # تفادي مشاكل الترميز للحروف الغريبة
-    def clean(t): return str(t).encode('utf-8').decode('ascii', 'ignore')
+    pdf.set_font("Helvetica", size=12)
     
-    pdf.cell(0, 10, f"Company: {clean(user['company'])}", ln=True)
-    pdf.cell(0, 10, f"Manager: {clean(user['name'])}", ln=True)
-    pdf.cell(0, 10, f"Location: {clean(user['city'])}", ln=True)
+    # دالة لتنظيف النصوص وحذف الإيموجي أو الحروف الغريبة باش الـ PDF ما يوقعش فيه خطأ ترميز
+    def clean_text(text):
+        return str(text).encode('ascii', 'ignore').decode('ascii')
+
+    # تنظيف اسم الشركة والمدينة
+    clean_company = clean_text(user['company']) or "Enterprise"
+    clean_manager = clean_text(user['name']) or "Manager"
+    clean_city = clean_text(user['city']) or "City"
+
+    pdf.cell(0, 10, f"Company: {clean_company}", ln=True)
+    pdf.cell(0, 10, f"Manager: {clean_manager}", ln=True)
+    pdf.cell(0, 10, f"Location: {clean_city}", ln=True)
     pdf.ln(5)
+    
     pdf.cell(0, 10, f"Solar Production: {res['solar']} kW", ln=True)
     pdf.cell(0, 10, f"Energy Consumption: {res['load']} kW", ln=True)
     pdf.cell(0, 10, f"Battery Level: {res['battery']}%", ln=True)
     pdf.cell(0, 10, f"CO2 Saved: {co2} kg", ln=True)
     pdf.ln(10)
+    
     pdf.multi_cell(0, 10, "This report was generated automatically by AI Energy Enterprise Platform.")
-    return pdf.output(dest="S").encode("latin-1", errors="ignore")
+    
+    # في fpdf2 الحديثة، استدعاء الدالة بدون متغيرات يرجع bytes مباشرة وجاهزة للتحميل
+    return pdf.output()
 
 # ================= SESSION =================
 if "user" not in st.session_state:
