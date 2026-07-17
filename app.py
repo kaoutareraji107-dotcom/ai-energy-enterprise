@@ -268,13 +268,46 @@ st.subheader("🤖 AI Insights")
 for tip in tips: st.success(tip)
 
 # ================= ANALYTICS =================
+# ================= Predictive Analytics Section =================
 st.markdown("---")
-st.subheader("📈 Live Analytics")
-if os.path.exists(DATA_FILE):
-    df = pd.read_csv(DATA_FILE)
-    fig = px.line(df, x="time", y=["solar", "load", "battery"], 
-                  title="⚡ Enterprise Energy Analytics", template="plotly_dark")
-    st.plotly_chart(fig, use_container_width=True)
+st.subheader("🔮 AI Demand Forecasting (Tomorrow)")
+
+col_predict_1, col_predict_2 = st.columns([1, 2])
+
+with col_predict_1:
+    st.markdown("""
+    <div style="background: rgba(139, 92, 246, 0.1); border: 1px solid #8B5CF6; padding: 20px; border-radius: 15px;">
+        <h4>توقعات الطقس ليوم غد 🌤️</h4>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # مدخلات مستخدم لتوقع الغد (أو نقدرو نجيبوهم من API مستقبلاً)
+    next_temp = st.slider("درجة الحرارة المتوقعة لغد (°C)", 10, 45, int(temp) + 2 if 'temp' in locals() else 27)
+    next_clouds = st.slider("كثافة الغيوم المتوقعة لغد", 0, 10, int(clouds) if 'clouds' in locals() else 3)
+    
+    # استدعاء محرك التنبؤ
+    predicted_total, hourly_curve = system.forecast_tomorrow_demand(next_temp, next_clouds)
+    
+    st.metric(label="📊 إجمالي الاستهلاك المتوقع لغد", value=f"{predicted_total} kW/h", delta=f"{system.predict_tomorrow()['prediction']}% مقارنة باليوم")
+
+with col_predict_2:
+    # رسم مبيان التنبؤ لـ 24 ساعة القادمة
+    forecast_df = pd.DataFrame({
+        "الساعة": [f"{h}:00" for h in range(24)],
+        "الاستهلاك المتوقع (kW)": hourly_curve
+    })
+    
+    fig_forecast = px.line(
+        forecast_df, 
+        x="الساعة", 
+        y="الاستهلاك المتوقع (kW)",
+        title="📈 المنحنى المتوقع لاستهلاك الطاقة على مدار 24 ساعة (غداً)",
+        template="plotly_dark",
+        color_discrete_sequence=["#8B5CF6"] # لون بنفسجي ملكي خاص بالتنبؤ
+    )
+    
+    fig_forecast.update_traces(mode="lines+markers", hovertemplate="الساعة: %{x}<br>الحمل: %{y} kW")
+    st.plotly_chart(fig_forecast, use_container_width=True)
 
 # ================= MAP =================
 st.markdown("---")
