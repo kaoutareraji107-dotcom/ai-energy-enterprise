@@ -156,6 +156,11 @@ def generate_pdf(user, res, co2):
     pdf.cell(0, 10, f"Battery Level: {res['battery']}%", ln=True)
     pdf.cell(0, 10, f"CO2 Saved: {co2} kg", ln=True)
     pdf.ln(10)
+    # نزيدو هاد الأسطر داخل دالة generate_pdf تحت معلومات الطاقة:
+    financials = res["financials"]
+    pdf.cell(0, 10, f"Financial Savings: {financials['money_saved']} MAD", ln=True)
+    pdf.cell(0, 10, f"Current Net Grid Cost: {financials['current_bill']} MAD", ln=True)
+    pdf.ln(5)
     
     pdf.multi_cell(0, 10, "This report was generated automatically by AI Energy Enterprise Platform.")
     
