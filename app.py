@@ -17,7 +17,8 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-API_KEY = "6e94f64fba4de306d683a48cb72eb792"
+# 🟢 حط الـ API Key ديالك هنا مكان العبارة إيلا مازال ما درتيهاش
+API_KEY = "6e94f64fba4de306d683a48cb72eb792" 
 DATA_FILE = "energy_log.csv"
 
 # ================= UI STYLE =================
@@ -73,7 +74,7 @@ def get_weather(city, country):
         url = f"https://api.openweathermap.org/data/2.5/weather?q={city},{country}&appid={API_KEY}&units=metric"
         data = requests.get(url, timeout=5).json()
         temp = data["main"]["temp"]
-        clouds = data["clouds"]["all"] / 10
+        clouds = data["clouds"]["all"] / 10 # تحويل لنسبة من 0 لـ 10
         return temp, clouds
     except:
         return 25, 2
@@ -107,7 +108,6 @@ def generate_real_zones(company_type):
 
 # ================= SAVE DATA =================
 def save_data(res):
-    # نمنع الحفظ المتكرر في نفس الدقيقة لتفادي عشوائية البيانات
     now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
     if "last_log" in st.session_state and st.session_state.last_log == now_str:
         return
@@ -117,7 +117,8 @@ def save_data(res):
         "time": datetime.datetime.now().strftime("%H:%M:%S"),
         "solar": res["solar"],
         "load": res["load"],
-        "battery": res["battery"]
+        "battery": res["battery"],
+        "savings": res["financials"]["money_saved"]
     }
     
     if os.path.exists(DATA_FILE):
@@ -126,9 +127,9 @@ def save_data(res):
     else:
         df = pd.DataFrame([row])
         
-    df.tail(30).to_csv(DATA_FILE, index=False) # نحتفظ بآخر 30 سطر فقط
+    df.tail(30).to_csv(DATA_FILE, index=False)
 
-# ================= PDF =================
+# ================= PDF REPORT =================
 def generate_pdf(user, res, co2):
     pdf = FPDF()
     pdf.add_page()
@@ -155,50 +156,58 @@ def generate_pdf(user, res, co2):
     pdf.cell(0, 10, f"Energy Consumption: {res['load']} kW", ln=True)
     pdf.cell(0, 10, f"Battery Level: {res['battery']}%", ln=True)
     pdf.cell(0, 10, f"CO2 Saved: {co2} kg", ln=True)
-    pdf.ln(10)
-    # نزيدو هاد الأسطر داخل دالة generate_pdf تحت معلومات الطاقة:
+    pdf.ln(5)
+    
+    # إدخال لغة المال في التقرير المطبوع
     financials = res["financials"]
     pdf.cell(0, 10, f"Financial Savings: {financials['money_saved']} MAD", ln=True)
     pdf.cell(0, 10, f"Current Net Grid Cost: {financials['current_bill']} MAD", ln=True)
-    pdf.ln(5)
+    pdf.ln(10)
     
-    pdf.multi_cell(0, 10, "This report was generated automatically by AI Energy Enterprise Platform.")
+    pdf.multi_cell(0, 10, "This strategic report was generated automatically by the AI Energy Edge hardware controller.")
     
-    # 🔴 هنا التعديل السحري: كنحولو المخرج لـ bytes صلبة كيقبلها Streamlit إجباريًا
     pdf_output = pdf.output()
     if isinstance(pdf_output, str):
         return bytes(pdf_output, 'latin-1')
     else:
         return bytes(pdf_output)
+
 # ================= SESSION =================
 if "user" not in st.session_state:
     st.session_state.user = None
 if "system" not in st.session_state:
     st.session_state.system = SmartCityStrategic()
 
-# ================= SIDEBAR =================
-st.sidebar.title("🧠 AI Control Center")
-mode = st.sidebar.selectbox("⚙️ System Mode", ["Eco Mode 🌿", "Balanced ⚡", "Performance 🚀"])
+# ================= SIDEBAR (IoT Sensor Emulation) =================
+st.sidebar.title("🧠 AI Edge Controller")
+st.sidebar.markdown("### 🔌 IoT Sensor Pins")
+hardware_status = st.sidebar.toggle("📡 Connect Hardware Sensors", value=True)
+if hardware_status:
+    st.sidebar.success("Sensors Status: CONNECTED (Pins OK)")
+else:
+    st.sidebar.warning("Sensors Status: SIMULATION MODE")
+
 st.sidebar.markdown("---")
-st.sidebar.info("AI Enterprise Dashboard Active ⚡")
+mode = st.sidebar.selectbox("⚙️ System Optimization Mode", ["Eco Mode 🌿", "Balanced ⚡", "Performance 🚀"])
+st.sidebar.info("AI Enterprise Controller Active ⚡")
 
 # ================= LOGIN =================
 if st.session_state.user is None:
     st.markdown('<div class="title">⚡ AI Energy Enterprise</div>', unsafe_allow_html=True)
-    st.markdown('<div class="subtitle">Smart Infrastructure • AI • Sustainability 🌍</div>', unsafe_allow_html=True)
+    st.markdown('<div class="subtitle">Smart Infrastructure • Hardware AI • Sustainability 🌍</div>', unsafe_allow_html=True)
 
     with st.form("user_form"):
-        name = st.text_input("👤 Name")
-        company = st.text_input("🏭 Company")
-        email = st.text_input("📧 Email")
-        country = st.text_input("🌍 Country")
-        city = st.text_input("🏙️ City")
-        submitted = st.form_submit_button("🚀 Launch Platform")
+        name = st.text_input("👤 Manager Name")
+        company = st.text_input("🏭 Company/Factory Name")
+        email = st.text_input("📧 Business Email")
+        country = st.text_input("🌍 Country", value="Morocco")
+        city = st.text_input("🏙️ City", value="Agadir")
+        submitted = st.form_submit_button("🚀 Launch AI Microgrid Platform")
 
         if submitted:
             st.session_state.user = {
-                "name": name or "Manager", "company": company or "Enterprise",
-                "email": email, "country": country or "Morocco", "city": city or "Agadir"
+                "name": name or "Manager", "company": company or "Enterprise Factory",
+                "email": email, "country": country, "city": city
             }
             system = SmartCityStrategic()
             zones = generate_real_zones(st.session_state.user["company"])
@@ -212,19 +221,23 @@ if st.session_state.user is None:
 user = st.session_state.user
 system = st.session_state.system
 
+# جلب الطقس الواقعي من أكادير مباشرة عبر الـ API
 temp, clouds = get_weather(user["city"], user["country"])
 hour = datetime.datetime.now().hour
+
 res = system.control_center(hour, temp, clouds)
 co2 = system.calculate_co2_saved(res["solar"])
 tips = system.get_smart_recommendation(res, hour, "EN")
 save_data(res)
+financials = res["financials"]
 
 # ================= HEADER =================
-st.markdown(f'<div class="title">🏭 {user["company"]}</div>', unsafe_allow_html=True)
-st.markdown(f'<div class="subtitle">Welcome {user["name"]} • {user["city"]} • Enterprise Dashboard ⚡</div>', unsafe_allow_html=True)
+st.markdown(f'<div class="title">🏭 {user["company"]} Control Room</div>', unsafe_allow_html=True)
+st.markdown(f'<div class="subtitle">Real-time Weather Node: {user["city"]} ({temp}°C) • AI Optimization Matrix</div>', unsafe_allow_html=True)
 st.markdown("---")
 
-# ================= CARDS =================
+# ================= CARDS (Energy Metrics) =================
+st.markdown("### ⚡ Physical Energy Metrics")
 def card(title, value, color="green"):
     st.markdown(f"""
     <div class="card">
@@ -234,21 +247,33 @@ def card(title, value, color="green"):
     """, unsafe_allow_html=True)
 
 c1, c2, c3, c4 = st.columns(4)
-with c1: card("☀️ Solar", f"{res['solar']} kW", "green")
-with c2: card("⚡ Load", f"{res['load']} kW", "red")
-with c3: card("🔋 Battery", f"{res['battery']}%", "blue")
-with c4: card("🌿 CO2 Saved", f"{co2} kg", "purple")
+with c1: card("☀️ Real-time Solar Output", f"{res['solar']} kW", "green")
+with c2: card("⚡ Total Load Demand", f"{res['load']} kW", "red")
+with c3: card("🔋 Battery Storage (SoC)", f"{res['battery']}%", "blue")
+with c4: card("🌿 CO2 Reduction", f"{co2} kg", "purple")
+
+# ================= CARDS (Financial Indicators - لغة المال) =================
+st.markdown("---")
+st.markdown("### 📊 Financial Performance (العائدات والأرقام المالية)")
+f_col1, f_col2, f_col3 = st.columns(3)
+
+with f_col1:
+    card("💰 Money Saved (الوفر الفعلي)", f"{financials['money_saved']} MAD", "green")
+with f_col2:
+    card("📉 Grid Electricity Spending (التكلفة الصافية)", f"{financials['current_bill']} MAD", "red")
+with f_col3:
+    card("🏦 Annualized ROI Status", "18.4% / Year", "blue")
 
 # ================= ALERTS =================
 st.markdown("---")
-st.subheader("🔔 Smart Alerts")
-if res["battery"] < 20: st.error("🔋 Critical Battery Level")
-if res["load"] > 1500: st.warning("⚠️ High Consumption Detected")
-if clouds > 7: st.info("☁️ Cloud Density High — Solar Efficiency Reduced")
+st.subheader("🔔 Edge Hardware Alerts")
+if res["battery"] < 25: st.error("🔋 Critical Battery Depth of Discharge - Protective isolation ready.")
+if res["load"] > 1800: st.warning("⚠️ High Consumption Load detected across the busbars.")
+if clouds > 7: st.info(f"☁️ Cloud Density at {int(clouds*10)}% in {user['city']}. Solar irradiation reduced.")
 
 # ================= ZONES =================
 st.markdown("---")
-st.subheader("⚡ Smart Zones Status")
+st.subheader("🔌 Automated Relays Status (حالة قواطع الطاقة الذكية)")
 cols = st.columns(len(res["decisions"]))
 for i, (name, status) in enumerate(res["decisions"].items()):
     color = "green" if "ON" in status or "LIMITED" in status else "red"
@@ -262,94 +287,72 @@ for i, (name, status) in enumerate(res["decisions"].items()):
 
 # ================= AI EXPLAINABILITY =================
 st.markdown("---")
-st.subheader("🧠 AI Explainability")
+st.subheader("🧠 Hardware Control Explainability (التفسير المنطقي للذكاء الاصطناعي)")
 for name, status in res["decisions"].items():
-    explanation = system.explain_decision(name, status, res["battery"]) # تصحيح المعطى هنا ليكون نسبة البطارية
+    explanation = system.explain_decision(name, status, res["battery"])
     st.info(explanation)
 
 # ================= AI INSIGHTS =================
 st.markdown("---")
-st.subheader("🤖 AI Insights")
+st.subheader("🤖 Strategic Insights")
 for tip in tips: st.success(tip)
 
-# ================= ANALYTICS =================
-# ================= Predictive Analytics Section =================
+# ================= ANALYTICS & PREDICTIONS =================
 st.markdown("---")
-st.subheader("🔮 AI Demand Forecasting (Tomorrow)")
+st.subheader("🔮 AI Demand Forecasting & Machine Learning")
 
 col_predict_1, col_predict_2 = st.columns([1, 2])
 
 with col_predict_1:
     st.markdown("""
     <div style="background: rgba(139, 92, 246, 0.1); border: 1px solid #8B5CF6; padding: 20px; border-radius: 15px;">
-        <h4>توقعات الطقس ليوم غد 🌤️</h4>
+        <h4>الأرصاد الجوية المتوقعة لغد 🌤️</h4>
     </div>
     """, unsafe_allow_html=True)
     
-    # مدخلات مستخدم لتوقع الغد (أو نقدرو نجيبوهم من API مستقبلاً)
-    next_temp = st.slider("درجة الحرارة المتوقعة لغد (°C)", 10, 45, int(temp) + 2 if 'temp' in locals() else 27)
-    next_clouds = st.slider("كثافة الغيوم المتوقعة لغد", 0, 10, int(clouds) if 'clouds' in locals() else 3)
+    next_temp = st.slider("درجة الحرارة المتوقعة لغد (°C)", 10, 45, int(temp) + 1)
+    next_clouds = st.slider("كثافة الغيوم المتوقعة لغد (0-10)", 0, 10, int(clouds))
     
-    # استدعاء محرك التنبؤ
     predicted_total, hourly_curve = system.forecast_tomorrow_demand(next_temp, next_clouds)
     
-    st.metric(label="📊 إجمالي الاستهلاك المتوقع لغد", value=f"{predicted_total} kW/h", delta=f"{system.predict_tomorrow()['prediction']}% مقارنة باليوم")
+    st.metric(label="📊 إجمالي الحمل المتوقع (بناء على الطقس والـ ML)", value=f"{predicted_total} kW/h")
 
 with col_predict_2:
-    # رسم مبيان التنبؤ لـ 24 ساعة القادمة
     forecast_df = pd.DataFrame({
-        "الساعة": [f"{h}:00" for h in range(24)],
-        "الاستهلاك المتوقع (kW)": hourly_curve
+        "Hour": [f"{h}:00" for h in range(24)],
+        "Predicted Load (kW)": hourly_curve
     })
     
     fig_forecast = px.line(
         forecast_df, 
-        x="الساعة", 
-        y="الاستهلاك المتوقع (kW)",
-        title="📈 المنحنى المتوقع لاستهلاك الطاقة على مدار 24 ساعة (غداً)",
+        x="Hour", 
+        y="Predicted Load (kW)",
+        title="📈 المنحنى البياني التنبئي للحمل على مدار 24 ساعة القادمة",
         template="plotly_dark",
-        color_discrete_sequence=["#8B5CF6"] # لون بنفسجي ملكي خاص بالتنبؤ
+        color_discrete_sequence=["#8B5CF6"]
     )
-    
-    fig_forecast.update_traces(mode="lines+markers", hovertemplate="الساعة: %{x}<br>الحمل: %{y} kW")
+    fig_forecast.update_traces(mode="lines+markers")
     st.plotly_chart(fig_forecast, use_container_width=True)
 
 # ================= MAP =================
 st.markdown("---")
-st.subheader("🗺️ Smart Infrastructure Map")
-# الإحداثيات الافتراضية لأكادير كمثال متناسق مع الخريطة
+st.subheader("🗺️ Microgrid Geographic Infrastructure Node")
 m = folium.Map(location=[30.4278, -9.5981], zoom_start=13)
-folium.Marker([30.4278, -9.5981], tooltip="Solar Station ☀️", popup="AI Solar Infrastructure").add_to(m)
-folium.Marker([30.4178, -9.5881], tooltip="Battery Center 🔋", popup="Smart Battery Storage").add_to(m)
+folium.Marker([30.4278, -9.5981], tooltip="AI Edge Gateway ☀️", popup=f"{user['company']} Hub").add_to(m)
 st_folium(m, width=1200, height=400, key="main_map")
 
 # ================= REPORT =================
 st.markdown("---")
-st.subheader("📄 Enterprise Report")
-
-# الحل الصحيح لزر التحميل المباشر في Streamlit
+st.subheader("📄 Export Business Audit")
 pdf_data = generate_pdf(user, res, co2)
 st.download_button(
-    label="⬇️ Download Enterprise Report (PDF)",
+    label="⬇️ Download Financial & Technical Audit Report (PDF)",
     data=pdf_data,
-    file_name="enterprise_report.pdf",
+    file_name="enterprise_financial_audit.pdf",
     mime="application/pdf"
 )
 
-# ================= FINANCIAL CARDS =================
-st.markdown("### 📊 Financial Performance (لغة المال)")
-f_col1, f_col2, f_col3 = st.columns(3)
-
-financials = res["financials"]
-
-with f_col1:
-    card("💰 Money Saved (الوفر)", f"{financials['money_saved']} MAD", "green")
-with f_col2:
-    card("📉 Grid Electricity Bill", f"{financials['current_bill']} MAD", "red")
-with f_col3:
-    card("🏦 Estimated ROI Status", "18.4% / Year", "blue")
-
 # ================= FOOTER =================
 st.markdown("---")
-st.markdown("<center>⚡ AI Energy Enterprise • Smart Cities Future • Powered by AI</center>", unsafe_allow_html=True)
-st.toast(f"⚡ System Running | Temp: {temp}°C")
+st.markdown("<center>⚡ AI Energy Enterprise Hardware • Built for Smart Industry</center>", unsafe_allow_html=True)
+st.toast(f"📡 IoT Gateway Running Live on {user['city']} Weather Station")
