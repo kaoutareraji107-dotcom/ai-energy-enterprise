@@ -17,7 +17,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-API_KEY = "YOUR_API_KEY"
+API_KEY = "6e94f64fba4de306d683a48cb72eb792"
 DATA_FILE = "energy_log.csv"
 
 # ================= UI STYLE =================
