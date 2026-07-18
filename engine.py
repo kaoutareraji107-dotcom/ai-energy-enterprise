@@ -22,6 +22,30 @@ class SmartCityStrategic:
         self.battery_capacity = 5000  # kWh
         self.current_charge = 2500    # kWh
 
+    # ================= FINANCIAL ENGINE =================
+    def calculate_financials(self, solar, actual_load):
+        """حساب المؤشرات المالية ولغة المال لأصحاب الشركات"""
+        # نعتبر ثمن الكيلوواط الافتراضي في المغرب للمقاولات هو 1.20 درهم
+        tariff_per_kwh = 1.20 
+        
+        # 1. التكلفة لو كنا خدامين غير بالشبكة العادية بلا طاقة شمسية
+        potential_cost = actual_load * tariff_per_kwh
+        
+        # 2. شحال وفرنا حيت استعملنا الطاقة الشمسية (الإنتاج اللي تغطى)
+        # الوفر هو الإنتاج الشمسي مضروب في الثمن، بشرط ما يفوتش الاستهلاك الفعلي
+        energy_covered = min(solar, actual_load)
+        money_saved = energy_covered * tariff_per_kwh
+        
+        # 3. الفاتورة الحالية (الضو اللي شرينا من برا حيت الشمس ما كفاتش)
+        grid_needed = max(0, actual_load - solar)
+        current_bill = grid_needed * tariff_per_kwh
+        
+        return {
+            "money_saved": round(money_saved, 2),
+            "current_bill": round(current_bill, 2),
+            "potential_cost": round(potential_cost, 2)
+        }
+
     # ================= MACHINE LEARNING DEMAND FORECASTING =================
     def train_demand_model(self, data_file="energy_log.csv"):
         """تدريب نموذج الذكاء الاصطناعي للتنبؤ باستهلاك الغد"""
@@ -122,6 +146,7 @@ class SmartCityStrategic:
         return decisions
 
     # ================= MAIN AI CONTROL =================
+    # ================= MAIN AI CONTROL =================
     def control_center(self, hour, temp, clouds):
         solar = self.get_solar(hour, clouds)
         current_pct = round((self.current_charge / self.battery_capacity) * 100, 1)
@@ -129,6 +154,9 @@ class SmartCityStrategic:
         actual_load = self.calculate_total_load(decisions)
         battery_pct = self.update_and_get_battery_pct(solar, actual_load)
         efficiency = self.calculate_efficiency(solar, actual_load)
+        
+        # 🟢 استدعاء الحسابات المالية الجديدة
+        financials = self.calculate_financials(solar, actual_load)
 
         return {
             "solar": solar,
@@ -137,9 +165,9 @@ class SmartCityStrategic:
             "efficiency": efficiency,
             "temperature": temp,
             "clouds": clouds,
-            "decisions": decisions
+            "decisions": decisions,
+            "financials": financials  # 🟢 تضاف هنا
         }
-
     # ================= CO2 SAVING =================
     def calculate_co2_saved(self, solar):
         return round(solar * 0.42, 2)
