@@ -331,6 +331,19 @@ st.download_button(
     mime="application/pdf"
 )
 
+# ================= FINANCIAL CARDS =================
+st.markdown("### 📊 Financial Performance (لغة المال)")
+f_col1, f_col2, f_col3 = st.columns(3)
+
+financials = res["financials"]
+
+with f_col1:
+    card("💰 Money Saved (الوفر)", f"{financials['money_saved']} MAD", "green")
+with f_col2:
+    card("📉 Grid Electricity Bill", f"{financials['current_bill']} MAD", "red")
+with f_col3:
+    card("🏦 Estimated ROI Status", "18.4% / Year", "blue")
+
 # ================= FOOTER =================
 st.markdown("---")
 st.markdown("<center>⚡ AI Energy Enterprise • Smart Cities Future • Powered by AI</center>", unsafe_allow_html=True)
