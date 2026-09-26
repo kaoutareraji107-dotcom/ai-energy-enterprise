@@ -17,83 +17,95 @@ class CityZone:
 class SmartCityStrategic:
     def __init__(self):
         self.zones = []
-        self.battery_capacity = 5000  # kWh (سعة البطارية الإجمالية)
-        self.current_charge = 2500    # kWh (الشحن الحالي الفعلي)
-        self.max_solar_peak = 2200    # kW (أقصى إنتاج للألواح الشمسية ف أكادير)
-        
-    # ================= FINANCIAL ENGINE =================
-    def calculate_financials(self, solar, actual_load):
-        """حساب المؤشرات المالية الحقيقية للمقاولات ف المغرب"""
-        # متوسط تعرفة الكهرباء الصناعية/التجارية ف المغرب (شاملة الرسوم الثابتة)
-        tariff_per_kwh = 1.25 # درهم مغربي
-        
-        potential_cost = actual_load * tariff_per_kwh
-        energy_covered = min(solar, actual_load)
-        money_saved = energy_covered * tariff_per_kwh
-        
-        grid_needed = max(0, actual_load - solar)
-        current_bill = grid_needed * tariff_per_kwh
-        
-        return {
-            "money_saved": round(money_saved, 2),
-            "current_bill": round(current_bill, 2),
-            "potential_cost": round(potential_cost, 2)
-        }
-
-    # ================= MACHINE LEARNING DEMAND FORECASTING =================
-    def train_demand_model(self, data_file="energy_log.csv"):
-        """تدريب النموذج بناء على السيناريوهات الفيزيائية الواقعية"""
-        if os.path.exists(data_file) and len(pd.read_csv(data_file)) > 10:
-            df = pd.read_csv(data_file)
-            X = np.array([[random.randint(15, 38), random.randint(0, 10)] for _ in range(len(df))])
-            y = df['load'].values
-        else:
-            np.random.seed(42)
-            X = np.random.uniform(15, 42, (100, 2)) # درجات الحرارة والغيوم
-            X[:, 1] = np.random.uniform(0, 10, 100)
-            # الاستهلاك الحقيقي المرتبط بالتكييف الصناعي والإنتاج ف الصيف
-            y = 600 + (X[:, 0] * 28) + (X[:, 1] * 35) + np.random.normal(0, 30, 100)
-        
-        model = RandomForestRegressor(n_estimators=50, random_state=42)
-        model.fit(X, y)
-        return model
-
-    def forecast_tomorrow_demand(self, tomorrow_temp, tomorrow_clouds):
-        model = self.train_demand_model()
-        input_data = np.array([[tomorrow_temp, tomorrow_clouds]])
-        prediction = model.predict(input_data)[0]
-        
-        hours = list(range(24))
-        hourly_forecast = []
-        for h in hours:
-            # منحنى حمل واقعي للمصانع والشركات (الذروة من 8 صباحا لـ 6 مساء)
-            if 8 <= h <= 18:
-                time_factor = 0.9 + (math.sin(h * math.pi / 12) * 0.1)
-            else:
-                time_factor = 0.45
-            
-            hourly_load = prediction * time_factor + np.random.normal(0, 15)
-            hourly_forecast.append(round(max(250, hourly_load), 2))
-            
-        return round(prediction, 2), hourly_forecast
+        self.battery_capacity = 5000.0  # kWh
+        self.current_charge = 2500.0    # kWh
+        self.max_solar_peak = 2200.0    # kW
+        self.model = None
+        self.init_ml_model()
 
     def add_zone(self, zone):
         self.zones.append(zone)
 
+    def clear_zones(self):
+        self.zones = []
+
+    # ================= FINANCIAL ENGINE (TOU TARIFF) =================
+    def calculate_financials(self, solar, actual_load, hour=12):
+        """حساب المؤشرات المالية مع مراعاة تعرفة ساعات الذروة ف المغرب"""
+        # تعرفة متغيرة: Peak hours (17:00 - 22:00) أغلى
+        if 17 <= hour <= 22:
+            tariff_per_kwh = 1.65  # درهم ف ساعات الذروة
+        else:
+            tariff_per_kwh = 1.05  # درهم ف الساعات العادية
+
+        potential_cost = actual_load * tariff_per_kwh
+        energy_covered = min(solar, actual_load)
+        money_saved = energy_covered * tariff_per_kwh
+
+        grid_needed = max(0.0, actual_load - solar)
+        current_bill = grid_needed * tariff_per_kwh
+
+        return {
+            "money_saved": round(money_saved, 2),
+            "current_bill": round(current_bill, 2),
+            "potential_cost": round(potential_cost, 2),
+            "tariff": tariff_per_kwh
+        }
+
+    # ================= MACHINE LEARNING ENGINE =================
+    def init_ml_model(self, data_file="energy_log.csv"):
+        """تدريب نموذج التنبؤ مرة واحدة عند التشغيل"""
+        if os.path.exists(data_file):
+            try:
+                df = pd.read_csv(data_file)
+                if len(df) >= 10 and 'temp' in df.columns and 'clouds' in df.columns:
+                    X = df[['temp', 'clouds']].values
+                    y = df['load'].values
+                    self.model = RandomForestRegressor(n_estimators=50, random_state=42)
+                    self.model.fit(X, y)
+                    return
+            except Exception:
+                pass
+        
+        # بيانات افتراضية للتدريب ف حالة عدم وجود ملف داتا كافي
+        np.random.seed(42)
+        X = np.random.uniform(15, 42, (150, 2))
+        y = 500 + (X[:, 0] * 30) + (X[:, 1] * 20) + np.random.normal(0, 25, 150)
+        self.model = RandomForestRegressor(n_estimators=50, random_state=42)
+        self.model.fit(X, y)
+
+    def forecast_tomorrow_demand(self, tomorrow_temp, tomorrow_clouds):
+        if self.model is None:
+            self.init_ml_model()
+
+        input_data = np.array([[tomorrow_temp, tomorrow_clouds]])
+        prediction = float(self.model.predict(input_data)[0])
+
+        hours = list(range(24))
+        hourly_forecast = []
+        for h in hours:
+            if 8 <= h <= 18:
+                time_factor = 0.9 + (math.sin(h * math.pi / 12) * 0.1)
+            else:
+                time_factor = 0.45
+
+            hourly_load = prediction * time_factor + np.random.normal(0, 10)
+            hourly_forecast.append(round(max(150.0, hourly_load), 2))
+
+        return round(prediction, 2), hourly_forecast
+
     # ================= REAL SOLAR MODEL =================
     def get_solar(self, hour, clouds):
-        """حساب إنتاج الإشعاع الشمسي الفعلي (GHI) حسب ساعات النهار وغيوم أكادير"""
         if 6 <= hour <= 18:
             curve = math.sin((hour - 6) * math.pi / 12)
             solar = self.max_solar_peak * curve
-            # تأثير الغيوم الحقيقي على الألواح الكهروضوئية
-            cloud_impact = (clouds / 10) * 0.75
-            solar *= (1 - cloud_impact)
-            return max(0, int(solar))
-        return 0
+            cloud_impact = (clouds / 10.0) * 0.75
+            solar *= (1.0 - cloud_impact)
+            return max(0.0, round(solar, 2))
+        return 0.0
 
     def calculate_total_load(self, decisions=None):
-        total = 0
+        total = 0.0
         for zone in self.zones:
             if decisions and zone.name in decisions:
                 status = decisions[zone.name]
@@ -107,19 +119,19 @@ class SmartCityStrategic:
         return total
 
     # ================= REAL BATTERY DYNAMICS =================
-    def update_and_get_battery_pct(self, solar, actual_load):
-        """محاكاة حركة الشحن والتفريغ الفيزيائية وكفاءة البطارية (Round-trip efficiency)"""
+    def update_and_get_battery_pct(self, solar, actual_load, delta_minutes=60):
         net_energy = solar - actual_load
         
-        # كفاءة الشحن والتفريغ 92% (فقدان طاقة واقعي ف المقاومات والحرارة)
+        # كفاءة الشحن والتفريغ (92%)
         if net_energy > 0:
-            net_energy *= 0.92 
+            net_energy *= 0.92
         else:
             net_energy /= 0.92
-            
-        self.current_charge += (net_energy / 60) # تحويل القدرة اللحظية لكيلوواط ساعة
-        self.current_charge = max(0, min(self.battery_capacity, self.current_charge))
-        return round((self.current_charge / self.battery_capacity) * 100, 1)
+
+        # تحويل الطاقة اللحظية حسب الوقت المنقضي
+        self.current_charge += (net_energy * (delta_minutes / 60.0))
+        self.current_charge = max(0.0, min(self.battery_capacity, self.current_charge))
+        return round((self.current_charge / self.battery_capacity) * 100.0, 1)
 
     def optimize_zones(self, solar, current_battery_pct):
         decisions = {}
@@ -151,12 +163,12 @@ class SmartCityStrategic:
 
     def control_center(self, hour, temp, clouds):
         solar = self.get_solar(hour, clouds)
-        current_pct = round((self.current_charge / self.battery_capacity) * 100, 1)
+        current_pct = round((self.current_charge / self.battery_capacity) * 100.0, 1)
         decisions = self.optimize_zones(solar, current_pct)
         actual_load = self.calculate_total_load(decisions)
         battery_pct = self.update_and_get_battery_pct(solar, actual_load)
         efficiency = self.calculate_efficiency(solar, actual_load)
-        financials = self.calculate_financials(solar, actual_load)
+        financials = self.calculate_financials(solar, actual_load, hour)
 
         return {
             "solar": solar,
@@ -170,20 +182,26 @@ class SmartCityStrategic:
         }
 
     def calculate_efficiency(self, solar, load):
-        if load == 0: return 100
-        return round(min(100, (solar / load) * 100), 2)
+        if load == 0: return 100.0
+        return round(min(100.0, (solar / load) * 100.0), 2)
+
+    def calculate_co2_saved(self, solar_kw):
+        # 1 كيلوواط ساعة شمسية كيوفر تقريباً 0.7 كجم من CO2 بالمغرب
+        return round(solar_kw * 0.7, 1)
 
     def get_smart_recommendation(self, res, hour, language="EN"):
         tips = []
-        if res["battery"] < 30: tips.append("🔋 Battery Optimization active: Critical depth of discharge warning.")
-        if res["solar"] > res["load"]: tips.append("☀️ Smart Grid: Net positive generation. Charging battery bank.")
-        if res["load"] > 1800: tips.append("⚠️ Load shedding algorithm prepared for non-essential zones.")
-        return tips if tips else ["⚡ Edge controller operational."]
+        if res["battery"] < 30:
+            tips.append("🔋 Battery Protection active: DoD threshold protection triggered.")
+        if res["solar"] > res["load"]:
+            tips.append("☀️ Solar Surplus: Storing green energy to battery bank.")
+        if 17 <= hour <= 22:
+            tips.append("⏰ Peak Tariff Hour: Maximum reliance on battery/solar to avoid high grid cost.")
+        return tips if tips else ["⚡ Microgrid Operating at Peak Efficiency."]
 
     def explain_decision(self, zone, status, battery_pct):
-        if status == "OFF": return f"⚠️ {zone} isolated by AI to prevent battery degradation below safe threshold."
-        if status == "LIMITED": return f"🟡 {zone} throttled to 50% duty cycle via PWM control to stabilize microgrid."
-        return f"☀️ {zone} connected to primary renewable busbar. Power supply stable."
-
-    def predict_tomorrow(self):
-        return {"prediction": random.randint(3, 15)}
+        if status == "OFF": 
+            return f"⚠️ {zone} isolated automatically to protect battery life cycle."
+        if status == "LIMITED": 
+            return f"🟡 {zone} power capped at 50% via PWM control to reduce load."
+        return f"☀️ {zone} fully powered via renewable microgrid busbar."
