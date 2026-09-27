@@ -8,8 +8,7 @@ import plotly.express as px
 import folium
 from streamlit_folium import st_folium
 
-from engine import SmartCityStrategic, CityZone
-from auth import init_db, register_user, authenticate, change_password
+from engine import SmartCityStrategic, CityZone, init_db, register_user, authenticate, change_password
 
 # ================= CONFIG =================
 st.set_page_config(
