@@ -9,17 +9,21 @@ class CityZone:
     def __init__(self, name: str, priority: int, consumption_kw: float):
         self.name = name
         self.priority = priority  # 1: Critical, 2: Important, 3: Non-Essential
-        self.consumption_kw = float(consumption_kw)  # Peak load in kW
+        self.consumption_kw = consumption_kw  # Peak load in kW
         self.active = True
 
 
 class SmartCityStrategic:
     """
-    AI Energy Enterprise - Enterprise Microgrid Core Engine
-    ------------------------------------------------------
-    - Real-time Microgrid Load and Battery Dispatch Strategy.
-    - Deterministic Solar Physics & Demand Predictive Forecasting via Random Forest.
-    - CO2 Footprint & Industrial Tariff Calculations.
+    AI Energy Enterprise - Energy Management Engine
+
+    Current scope:
+    - Deterministic solar and demand simulation
+    - Random Forest demand forecasting
+    - Battery SOC simulation
+    - Priority-based zone optimization
+    - Hourly energy-flow accounting
+    - Estimated financial and CO2 metrics
     """
 
     def __init__(
@@ -36,21 +40,22 @@ class SmartCityStrategic:
         # System parameters
         self.battery_capacity_kwh = max(0.0, battery_capacity_kwh)
         self.current_charge_kwh = max(
-            0.0,
-            min(initial_charge_kwh, self.battery_capacity_kwh)
+            0.0, min(initial_charge_kwh, self.battery_capacity_kwh)
         )
         self.max_solar_peak_kw = max(0.0, max_solar_peak_kw)
         self.battery_efficiency = min(max(battery_efficiency, 0.01), 1.0)
 
         # Financial parameters
         self.system_capex_mad = max(0.0, system_capex_mad)
+
+        # Morocco grid emission-factor assumption
         self.co2_factor = max(0.0, co2_factor_kg_per_kwh)
 
         self.model = None
         self.init_ml_model()
 
     # ============================================================
-    # 1. ZONES MANAGEMENT
+    # 1. ZONES
     # ============================================================
 
     def add_zone(self, zone: CityZone):
@@ -59,15 +64,12 @@ class SmartCityStrategic:
     def clear_zones(self):
         self.zones = []
 
-    def get_total_requested_load(self) -> float:
-        return float(sum(z.consumption_kw for z in self.zones if z.active))
-
     # ============================================================
-    # 2. FINANCIAL ENGINE & TARIFFS
+    # 2. FINANCIAL ENGINE
     # ============================================================
 
     def get_tariff_mad_per_kwh(self, hour: int) -> float:
-        """Standard Time-of-Use Industrial Tariff Profile."""
+        """Time-of-Use tariff assumption for Morocco standard load."""
         return 1.65 if 17 <= hour <= 22 else 1.05
 
     def calculate_financials(
@@ -90,8 +92,7 @@ class SmartCityStrategic:
         current_grid_cost_mad = grid_import_kwh * tariff
 
         money_saved_mad = max(
-            0.0,
-            potential_grid_cost_mad - current_grid_cost_mad
+            0.0, potential_grid_cost_mad - current_grid_cost_mad
         )
 
         annual_savings = (
@@ -101,7 +102,9 @@ class SmartCityStrategic:
         )
 
         if annual_savings is not None and self.system_capex_mad > 0:
-            payback_years = self.system_capex_mad / annual_savings if annual_savings > 0 else None
+            payback_years = (
+                self.system_capex_mad / annual_savings if annual_savings > 0 else None
+            )
             roi_percentage = (annual_savings / self.system_capex_mad) * 100.0
         else:
             payback_years = None
@@ -116,9 +119,15 @@ class SmartCityStrategic:
             "solar_to_load_kwh": round(solar_to_load_kwh, 3),
             "battery_to_load_kwh": round(battery_to_load_kwh, 3),
             "grid_import_kwh": round(grid_import_kwh, 3),
-            "annual_savings_mad": round(annual_savings, 2) if annual_savings is not None else None,
-            "payback_years": round(payback_years, 2) if payback_years is not None else None,
-            "roi_percentage": round(roi_percentage, 2) if roi_percentage is not None else None,
+            "annual_savings_mad": (
+                round(annual_savings, 2) if annual_savings is not None else None
+            ),
+            "payback_years": (
+                round(payback_years, 2) if payback_years is not None else None
+            ),
+            "roi_percentage": (
+                round(roi_percentage, 2) if roi_percentage is not None else None
+            ),
         }
 
     def calculate_daily_financial_projection(
@@ -131,6 +140,7 @@ class SmartCityStrategic:
             raise ValueError("hourly_load_kw and hourly_solar_kw must contain 24 values.")
 
         original_charge = self.current_charge_kwh
+
         daily_savings = 0.0
         daily_grid_cost = 0.0
         daily_potential_cost = 0.0
@@ -179,12 +189,16 @@ class SmartCityStrategic:
             "annual_savings_mad": round(annual_savings, 2),
             "daily_grid_cost_mad": round(daily_grid_cost, 2),
             "daily_potential_cost_mad": round(daily_potential_cost, 2),
-            "payback_years": round(payback_years, 2) if payback_years is not None else None,
-            "roi_percentage": round(roi_percentage, 2) if roi_percentage is not None else None,
+            "payback_years": (
+                round(payback_years, 2) if payback_years is not None else None
+            ),
+            "roi_percentage": (
+                round(roi_percentage, 2) if roi_percentage is not None else None
+            ),
         }
 
     # ============================================================
-    # 3. MACHINE LEARNING ENGINE
+    # 3. MACHINE LEARNING FORECASTING
     # ============================================================
 
     def init_ml_model(self, data_file="energy_log.csv"):
@@ -201,20 +215,27 @@ class SmartCityStrategic:
                         y = clean_df["load_kw"].values
 
                         self.model = RandomForestRegressor(
-                            n_estimators=100, random_state=42, n_jobs=-1
+                            n_estimators=100,
+                            random_state=42,
+                            n_jobs=-1,
                         )
                         self.model.fit(X, y)
                         return
             except Exception:
                 pass
 
-        temps = np.linspace(15, 42, 200)
-        clouds = np.linspace(0, 10, 200)
+        # Improved Synthetic Generation (Distributed across feature space)
+        np.random.seed(42)
+        temps = np.random.uniform(15, 42, 500)
+        clouds = np.random.uniform(0, 10, 500)
+
         X = np.column_stack((temps, clouds))
         y = 400 + (X[:, 0] * 25) + (X[:, 1] * 15)
 
         self.model = RandomForestRegressor(
-            n_estimators=100, random_state=42, n_jobs=-1
+            n_estimators=100,
+            random_state=42,
+            n_jobs=-1,
         )
         self.model.fit(X, y)
 
@@ -243,7 +264,7 @@ class SmartCityStrategic:
         return round(prediction, 2), hourly_forecast
 
     # ============================================================
-    # 4. SOLAR & ENERGY FLOW
+    # 4. SOLAR MODEL
     # ============================================================
 
     def get_solar_kw(self, hour: int, clouds: float) -> float:
@@ -254,9 +275,14 @@ class SmartCityStrategic:
             sun_angle = math.sin((hour - 6) * math.pi / 12)
             solar_power = self.max_solar_peak_kw * sun_angle
             cloud_attenuation = 1.0 - ((clouds / 10.0) * 0.70)
+
             return max(0.0, round(solar_power * cloud_attenuation, 2))
 
         return 0.0
+
+    # ============================================================
+    # 5. ENERGY FLOW + BATTERY
+    # ============================================================
 
     def calculate_energy_flow(
         self,
@@ -265,6 +291,9 @@ class SmartCityStrategic:
         delta_hours: float = 1.0,
         allow_battery: bool = True,
     ):
+        if delta_hours <= 0:
+            raise ValueError("delta_hours must be greater than 0.")
+
         solar_kw = max(0.0, float(solar_kw))
         load_kw = max(0.0, float(load_kw))
 
@@ -279,23 +308,41 @@ class SmartCityStrategic:
         battery_discharge_kwh = 0.0
 
         if allow_battery and excess_solar_kwh > 0:
-            available_capacity_kwh = max(0.0, self.battery_capacity_kwh - self.current_charge_kwh)
-            energy_storable_kwh = min(excess_solar_kwh * self.battery_efficiency, available_capacity_kwh)
+            available_capacity_kwh = max(
+                0.0, self.battery_capacity_kwh - self.current_charge_kwh
+            )
+
+            energy_storable_kwh = min(
+                excess_solar_kwh * self.battery_efficiency,
+                available_capacity_kwh,
+            )
 
             if energy_storable_kwh > 0:
-                solar_used_for_charging_kwh = energy_storable_kwh / self.battery_efficiency
+                solar_used_for_charging_kwh = (
+                    energy_storable_kwh / self.battery_efficiency
+                )
                 battery_charge_kwh = energy_storable_kwh
                 self.current_charge_kwh += battery_charge_kwh
-                excess_solar_kwh = max(0.0, excess_solar_kwh - solar_used_for_charging_kwh)
+                excess_solar_kwh = max(
+                    0.0, excess_solar_kwh - solar_used_for_charging_kwh
+                )
 
         if allow_battery and remaining_load_kwh > 0:
-            max_deliverable_kwh = self.current_charge_kwh * self.battery_efficiency
+            max_deliverable_kwh = (
+                self.current_charge_kwh * self.battery_efficiency
+            )
+
             battery_to_load_kwh = min(remaining_load_kwh, max_deliverable_kwh)
 
             if battery_to_load_kwh > 0:
                 battery_discharge_kwh = battery_to_load_kwh
-                battery_energy_removed_kwh = battery_to_load_kwh / self.battery_efficiency
-                self.current_charge_kwh = max(0.0, self.current_charge_kwh - battery_energy_removed_kwh)
+                battery_energy_removed_kwh = (
+                    battery_to_load_kwh / self.battery_efficiency
+                )
+
+                self.current_charge_kwh = max(
+                    0.0, self.current_charge_kwh - battery_energy_removed_kwh
+                )
                 remaining_load_kwh = max(0.0, remaining_load_kwh - battery_to_load_kwh)
         else:
             battery_to_load_kwh = 0.0
@@ -315,7 +362,10 @@ class SmartCityStrategic:
             "solar_kwh": round(solar_kwh, 3),
             "solar_to_load_kwh": round(solar_to_load_kwh, 3),
             "solar_to_battery_kwh": round(
-                battery_charge_kwh / self.battery_efficiency if self.battery_efficiency > 0 else 0.0, 3
+                battery_charge_kwh / self.battery_efficiency
+                if self.battery_efficiency > 0
+                else 0.0,
+                3,
             ),
             "battery_to_load_kwh": round(battery_to_load_kwh, 3),
             "grid_import_kwh": round(grid_import_kwh, 3),
@@ -326,27 +376,89 @@ class SmartCityStrategic:
             "battery_soc_pct": round(soc_percentage, 1),
         }
 
+    def update_battery_soc(
+        self,
+        solar_kw: float,
+        load_kw: float,
+        delta_hours: float = 1.0,
+    ) -> float:
+        flow = self.calculate_energy_flow(
+            solar_kw=solar_kw,
+            load_kw=load_kw,
+            delta_hours=delta_hours,
+            allow_battery=True,
+        )
+        return flow["battery_soc_pct"]
+
+    # ============================================================
+    # 6. CO2
+    # ============================================================
+
     def calculate_co2_saved_kg(self, solar_to_load_kwh: float) -> float:
-        return round(max(0.0, float(solar_to_load_kwh)) * self.co2_factor, 2)
+        avoided_grid_kwh = max(0.0, float(solar_to_load_kwh))
+        return round(avoided_grid_kwh * self.co2_factor, 2)
 
     # ============================================================
-    # 5. INTEGRATED CONTROL CENTER (RESTORED & OPTIMIZED)
+    # 7. ZONE OPTIMIZATION
     # ============================================================
 
-    def control_center(self, hour: int, temp: float, clouds: float):
-        """Dispatches relays and evaluates real-time system performance."""
-        solar_kw = self.get_solar_kw(hour, clouds)
-        total_requested_load = self.get_total_requested_load()
-
+    def optimize_zones(self, solar_kw: float, soc_pct: float):
         decisions = {}
-        for z in self.zones:
-            decisions[z.name] = "ON" if z.active else "OFF"
+        for zone in self.zones:
+            if soc_pct < 20.0 and solar_kw < 300:
+                zone.active = zone.priority == 1
+                decisions[zone.name] = "ON" if zone.active else "OFF"
+            elif soc_pct < 40.0:
+                if zone.priority == 3:
+                    zone.active = False
+                    decisions[zone.name] = "OFF"
+                elif zone.priority == 2:
+                    zone.active = True
+                    decisions[zone.name] = "LIMITED"
+                else:
+                    zone.active = True
+                    decisions[zone.name] = "ON"
+            else:
+                zone.active = True
+                decisions[zone.name] = "ON"
+        return decisions
+
+    def calculate_total_load_kw(self, decisions: dict) -> float:
+        total_kw = 0.0
+        for zone in self.zones:
+            status = decisions.get(zone.name, "ON")
+            if status == "ON":
+                total_kw += zone.consumption_kw
+            elif status == "LIMITED":
+                total_kw += zone.consumption_kw * 0.5
+        return round(total_kw, 2)
+
+    # ============================================================
+    # 8. CONTROL CENTER
+    # ============================================================
+
+    def control_center(
+        self,
+        hour: int,
+        temp: float,
+        clouds: float,
+        delta_hours: float = 1.0,
+    ):
+        solar_kw = self.get_solar_kw(hour=hour, clouds=clouds)
+        soc_pct = (
+            (self.current_charge_kwh / self.battery_capacity_kwh) * 100.0
+            if self.battery_capacity_kwh > 0
+            else 0.0
+        )
+
+        decisions = self.optimize_zones(solar_kw=solar_kw, soc_pct=soc_pct)
+        load_kw = self.calculate_total_load_kw(decisions)
 
         flow = self.calculate_energy_flow(
             solar_kw=solar_kw,
-            load_kw=total_requested_load,
-            delta_hours=1.0,
-            allow_battery=True
+            load_kw=load_kw,
+            delta_hours=delta_hours,
+            allow_battery=True,
         )
 
         financials = self.calculate_financials(
@@ -354,17 +466,24 @@ class SmartCityStrategic:
             solar_to_load_kwh=flow["solar_to_load_kwh"],
             battery_to_load_kwh=flow["battery_to_load_kwh"],
             grid_import_kwh=flow["grid_import_kwh"],
-            hour=hour
+            hour=hour,
         )
 
-        co2_saved = self.calculate_co2_saved_kg(flow["solar_to_load_kwh"])
+        co2_saved = self.calculate_co2_saved_kg(
+            solar_to_load_kwh=flow["solar_to_load_kwh"]
+        )
 
         return {
-            "solar_kw": solar_kw,
-            "load_kw": total_requested_load,
+            "hour": int(hour),
+            "temperature": float(temp),
+            "clouds": float(clouds),
+            "solar_kw": round(solar_kw, 2),
+            "load_kw": round(load_kw, 2),
             "battery_soc": flow["battery_soc_pct"],
-            "co2_saved_kg": co2_saved,
-            "decisions": decisions,
+            "battery_charge_kwh": flow["battery_charge_kwh"],
+            "battery_discharge_kwh": flow["battery_discharge_kwh"],
             "energy_flow": flow,
-            "financials": financials
+            "decisions": decisions,
+            "financials": financials,
+            "co2_saved_kg": co2_saved,
         }
