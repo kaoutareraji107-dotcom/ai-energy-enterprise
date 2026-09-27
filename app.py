@@ -1,27 +1,29 @@
-import streamlit as st
 import datetime
+import os
 import requests
 import pandas as pd
-import os
 from fpdf import FPDF
 import plotly.express as px
 import folium
 from streamlit_folium import st_folium
+import streamlit as st
 
-from engine import SmartCityStrategic, CityZone
+from engine import CityZone, SmartCityStrategic
 
 # ================= CONFIG =================
 st.set_page_config(
     page_title="AI Energy Enterprise ⚡",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="expanded",
 )
 
+# 🟢 الأمان: قراءة المفتاح من st.secrets أو متغيرة البيئة
 API_KEY = st.secrets.get("OPENWEATHER_API_KEY", os.getenv("OPENWEATHER_API_KEY", ""))
 DATA_FILE = "energy_log.csv"
 
 # ================= UI STYLE =================
-st.markdown("""
+st.markdown(
+    """
 <style>
 html, body, [class*="css"] {
     background: #050816;
@@ -29,33 +31,35 @@ html, body, [class*="css"] {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
 .main {
-    background: linear-gradient(180deg,#050816,#0f172a);
+    background: linear-gradient(180deg, #050816, #0f172a);
 }
 .title {
-    font-size: 44px;
+    font-size: 42px;
     font-weight: 800;
     text-align: center;
-    background: linear-gradient(90deg,#00FF9C,#00CFFF,#8B5CF6);
+    background: linear-gradient(90deg, #00FF9C, #00CFFF, #8B5CF6);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
+    margin-bottom: 5px;
 }
 .subtitle {
     text-align: center;
-    color: rgba(255,255,255,0.7);
-    margin-bottom: 20px;
+    color: rgba(255, 255, 255, 0.7);
+    margin-bottom: 25px;
+    font-size: 16px;
 }
 .card {
-    background: rgba(255,255,255,0.05);
-    border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 20px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 18px;
     padding: 20px;
     text-align: center;
     backdrop-filter: blur(14px);
-    box-shadow: 0 8px 30px rgba(0,0,0,0.45);
-    transition: 0.3s;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+    transition: 0.3s ease-in-out;
 }
 .card:hover {
-    transform: translateY(-4px);
+    transform: translateY(-3px);
     border: 1px solid #00FF9C;
 }
 .green { color: #00FF9C; }
@@ -63,9 +67,11 @@ html, body, [class*="css"] {
 .blue { color: #00CFFF; }
 .purple { color: #8B5CF6; }
 </style>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
-# ================= WEATHER API =================
+# ================= WEATHER (WITH ERROR HANDLING) =================
 @st.cache_data(ttl=600)
 def get_weather(city, country):
     if not API_KEY or not city:
@@ -82,34 +88,35 @@ def get_weather(city, country):
         st.sidebar.warning(f"Weather API Warning: {e}")
     return 25.0, 2.0
 
-# ================= REAL ZONES =================
+# ================= REAL ZONES GENERATOR =================
 def generate_real_zones(company_type):
-    company_type = str(company_type).lower()
+    company_type = company_type.lower()
     if "factory" in company_type or "مصنع" in company_type:
         return [
-            CityZone("Production Line", 1, 1500),
-            CityZone("Cooling System", 2, 800),
-            CityZone("Smart Lighting", 3, 300)
+            CityZone("🏭 Production Line", 1, 1500),
+            CityZone("❄️ Cooling System", 2, 800),
+            CityZone("💡 Smart Lighting", 3, 300),
         ]
     elif "hospital" in company_type or "مستشفى" in company_type:
         return [
-            CityZone("ICU Unit", 1, 1000),
-            CityZone("Emergency Ward", 1, 900),
-            CityZone("General Rooms", 2, 500)
+            CityZone("🏥 ICU", 1, 1000),
+            CityZone("🚑 Emergency", 1, 900),
+            CityZone("🛏️ Rooms", 2, 500),
         ]
-    elif "mall" in company_type or "فندق" in company_type:
+    elif "mall" in company_type or "فندق" in company_type or "مول" in company_type:
         return [
-            CityZone("Retail Outlets", 1, 1200),
-            CityZone("HVAC Cooling", 2, 700),
-            CityZone("Parking Facilities", 3, 300)
+            CityZone("🛍️ Shops", 1, 1200),
+            CityZone("❄️ Cooling", 2, 700),
+            CityZone("🚗 Parking", 3, 300),
         ]
     else:
         return [
-            CityZone("Main Facilities", 1, 800),
-            CityZone("Support Systems", 2, 400)
+            CityZone("⚡ Main System", 1, 800),
+            CityZone("🔧 Support Operations", 2, 400),
+            CityZone("💡 Non-Essential", 3, 200),
         ]
 
-# ================= DATA LOGGING =================
+# ================= SAVE DATA =================
 def save_data(res, temp, clouds):
     now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
     if st.session_state.get("last_log") == now_str:
@@ -127,54 +134,64 @@ def save_data(res, temp, clouds):
         "grid_import_kwh": res.get("energy_flow", {}).get("grid_import_kwh", 0.0),
         "solar_to_load_kwh": res.get("energy_flow", {}).get("solar_to_load_kwh", 0.0),
         "battery_to_load_kwh": res.get("energy_flow", {}).get("battery_to_load_kwh", 0.0),
-        "co2_saved_kg": res.get("co2_saved_kg", 0.0)
+        "co2_saved_kg": res.get("co2_saved_kg", 0.0),
     }
-    
+
     df_new = pd.DataFrame([row])
-    header = not os.path.exists(DATA_FILE)
-    df_new.to_csv(DATA_FILE, mode='a', header=header, index=False)
+    if os.path.exists(DATA_FILE):
+        df_new.to_csv(DATA_FILE, mode="a", header=False, index=False)
+    else:
+        df_new.to_csv(DATA_FILE, mode="w", header=True, index=False)
 
-# ================= SAFE PDF REPORT GENERATION =================
-def sanitize_str(val):
-    """Sanitizes text strings to avoid Latin-1 / ASCII FPDF errors."""
-    return str(val).encode('ascii', 'ignore').decode('ascii') or "N/A"
-
+# ================= PDF REPORT =================
 def generate_pdf(user, res):
     pdf = FPDF()
     pdf.add_page()
-    
+
     pdf.set_font("Helvetica", style="B", size=16)
     pdf.cell(0, 10, "AI ENERGY ENTERPRISE AUDIT REPORT", ln=True, align="C")
     pdf.ln(10)
-    
+
     pdf.set_font("Helvetica", size=11)
-    pdf.cell(0, 8, f"Company Name: {sanitize_str(user['company'])}", ln=True)
-    pdf.cell(0, 8, f"Facility Manager: {sanitize_str(user['name'])}", ln=True)
-    pdf.cell(0, 8, f"Location Node: {sanitize_str(user['city'])}, {sanitize_str(user['country'])}", ln=True)
+    clean_company = str(user.get("company", "Enterprise")).encode("ascii", "ignore").decode("ascii") or "Enterprise"
+    clean_manager = str(user.get("name", "Manager")).encode("ascii", "ignore").decode("ascii") or "Manager"
+    clean_city = str(user.get("city", "City")).encode("ascii", "ignore").decode("ascii") or "City"
+
+    pdf.cell(0, 8, f"Company: {clean_company}", ln=True)
+    pdf.cell(0, 8, f"Manager: {clean_manager}", ln=True)
+    pdf.cell(0, 8, f"Location: {clean_city}", ln=True)
+    pdf.cell(0, 8, f"Date: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}", ln=True)
     pdf.ln(5)
-    
+
     pdf.set_font("Helvetica", style="B", size=13)
-    pdf.cell(0, 8, "Technical Microgrid Performance:", ln=True)
+    pdf.cell(0, 8, "Technical Operational Metrics", ln=True)
     pdf.set_font("Helvetica", size=11)
-    pdf.cell(0, 7, f"- Solar Active Generation: {res['solar_kw']} kW", ln=True)
-    pdf.cell(0, 7, f"- Instant Power Demand: {res['load_kw']} kW", ln=True)
-    pdf.cell(0, 7, f"- Storage Battery SoC: {res['battery_soc']}%", ln=True)
-    pdf.cell(0, 7, f"- CO2 Emissions Offset: {res['co2_saved_kg']} kg", ln=True)
+    pdf.cell(0, 8, f"- Solar Output: {res['solar_kw']} kW", ln=True)
+    pdf.cell(0, 8, f"- Load Consumption: {res['load_kw']} kW", ln=True)
+    pdf.cell(0, 8, f"- Battery State of Charge (SoC): {res['battery_soc']}%", ln=True)
+    pdf.cell(0, 8, f"- CO2 Saved: {res['co2_saved_kg']} kg", ln=True)
     pdf.ln(5)
-    
+
     financials = res["financials"]
     pdf.set_font("Helvetica", style="B", size=13)
-    pdf.cell(0, 8, "Financial Performance Metrics:", ln=True)
+    pdf.cell(0, 8, "Financial Assessment", ln=True)
     pdf.set_font("Helvetica", size=11)
-    pdf.cell(0, 7, f"- Instant Hourly Savings: {financials['money_saved_mad']} MAD", ln=True)
-    pdf.cell(0, 7, f"- Net Grid Import Bill: {financials['current_bill_mad']} MAD", ln=True)
+    pdf.cell(0, 8, f"- Hourly Savings: {financials['money_saved_mad']} MAD", ln=True)
+    pdf.cell(0, 8, f"- Current Net Bill: {financials['current_bill_mad']} MAD", ln=True)
+
+    payback = financials.get("payback_years")
+    roi = financials.get("roi_percentage")
+    payback_str = f"{payback} Years" if payback is not None else "N/A"
+    roi_str = f"{roi}%" if roi is not None else "N/A"
+
+    pdf.cell(0, 8, f"- Projected Payback: {payback_str} (ROI: {roi_str})", ln=True)
     pdf.ln(10)
-    
-    pdf.set_font("Helvetica", style="I", size=9)
-    pdf.multi_cell(0, 5, "Automated Audit generated by AI Energy Enterprise hardware-edge controller.")
+
+    pdf.set_font("Helvetica", style="I", size=10)
+    pdf.multi_cell(0, 8, "Generated by AI Energy Enterprise Edge Controller. Confidential Audit Report.")
     return bytes(pdf.output())
 
-# ================= SESSION INITIALIZATION =================
+# ================= SESSION STATE INIT =================
 if "user" not in st.session_state:
     st.session_state.user = None
 if "system" not in st.session_state:
@@ -182,33 +199,43 @@ if "system" not in st.session_state:
 
 # ================= SIDEBAR =================
 st.sidebar.title("🧠 AI Edge Controller")
+st.sidebar.markdown("### 🔌 IoT Sensor Pins")
 hardware_status = st.sidebar.toggle("📡 Enable IoT Simulation", value=True)
 if hardware_status:
-    st.sidebar.success("IoT Status: ACTIVE SIMULATION")
+    st.sidebar.success("IoT Status: SIMULATION ACTIVE")
+    st.sidebar.caption("Real hardware sensor streams simulated.")
 else:
-    st.sidebar.warning("IoT Status: OFF")
+    st.sidebar.warning("IoT Status: SIMULATION OFF")
 
 st.sidebar.markdown("---")
-mode = st.sidebar.selectbox("⚙️ Optimization Strategy", ["Eco Mode 🌿", "Balanced ⚡", "Performance 🚀"])
+mode = st.sidebar.selectbox("⚙️ System Optimization Mode", ["Eco Mode 🌿", "Balanced ⚡", "Performance 🚀"])
 
-# ================= LOGIN FLOW =================
+if st.session_state.user is not None:
+    st.sidebar.markdown("---")
+    if st.sidebar.button("🔴 Logout / Switch Enterprise"):
+        st.session_state.user = None
+        st.rerun()
+
+# ================= LOGIN / ENTERPRISE FORM =================
 if st.session_state.user is None:
     st.markdown('<div class="title">⚡ AI Energy Enterprise</div>', unsafe_allow_html=True)
-    st.markdown('<div class="subtitle">Smart Infrastructure • Edge Hardware AI • Sustainability</div>', unsafe_allow_html=True)
+    st.markdown('<div class="subtitle">Smart Microgrid • AI Optimization • Enterprise Sustainability 🌍</div>', unsafe_allow_html=True)
 
     with st.form("user_form"):
         name = st.text_input("👤 Manager Name")
-        company = st.text_input("🏭 Enterprise/Factory Name")
+        company = st.text_input("🏭 Company / Facility Name", value="Agadir Solar Factory")
         email = st.text_input("📧 Business Email")
         country = st.text_input("🌍 Country", value="Morocco")
         city = st.text_input("🏙️ City", value="Agadir")
-        submitted = st.form_submit_button("🚀 Launch AI Microgrid Platform")
+        submitted = st.form_submit_button("🚀 Launch AI Microgrid Dashboard")
 
         if submitted:
             st.session_state.user = {
-                "name": name or "Manager", 
-                "company": company or "Enterprise Factory",
-                "email": email, "country": country, "city": city
+                "name": name or "Manager",
+                "company": company or "Enterprise Facility",
+                "email": email,
+                "country": country,
+                "city": city,
             }
             system = SmartCityStrategic()
             system.clear_zones()
@@ -218,7 +245,7 @@ if st.session_state.user is None:
             st.rerun()
     st.stop()
 
-# ================= DASHBOARD MAIN =================
+# ================= DASHBOARD CORE =================
 user = st.session_state.user
 system = st.session_state.system
 
@@ -231,36 +258,65 @@ financials = res["financials"]
 
 # ================= HEADER =================
 st.markdown(f'<div class="title">🏭 {user["company"]} Control Room</div>', unsafe_allow_html=True)
-st.markdown(f'<div class="subtitle">Real-Time Sensor Node: {user["city"]} ({temp}°C) | Tariff: {financials["tariff_mad_kwh"]} MAD/kWh</div>', unsafe_allow_html=True)
+st.markdown(
+    f'<div class="subtitle">Weather Node: {user["city"]} ({temp}°C) • Active Tariff Rate: {financials["tariff_mad_kwh"]} MAD/kWh</div>',
+    unsafe_allow_html=True,
+)
 st.markdown("---")
+
+# ================= HELPER UI CARD =================
+def card(title, value, color="green"):
+    st.markdown(
+        f"""
+    <div class="card">
+        <h4 style="margin:0; font-size: 14px; opacity: 0.8;">{title}</h4>
+        <h2 class="{color}" style="margin: 10px 0 0 0; font-size: 26px;">{value}</h2>
+    </div>
+    """,
+        unsafe_allow_html=True,
+    )
 
 # ================= METRICS =================
-st.markdown("### ⚡ Microgrid Physical Metrics")
-def card(title, value, color="green"):
-    st.markdown(f"""
-    <div class="card">
-        <h4>{title}</h4>
-        <h2 class="{color}">{value}</h2>
-    </div>
-    """, unsafe_allow_html=True)
-
+st.markdown("### ⚡ Physical Energy Metrics")
 c1, c2, c3, c4 = st.columns(4)
-with c1: card("☀️ Solar Power", f"{res['solar_kw']} kW", "green")
-with c2: card("⚡ Total Demand", f"{res['load_kw']} kW", "red")
-with c3: card("🔋 Battery SoC", f"{res['battery_soc']}%", "blue")
-with c4: card("🌿 CO2 Reduced", f"{res['co2_saved_kg']} kg", "purple")
+with c1:
+    card("☀️ Solar Output", f"{res['solar_kw']} kW", "green")
+with c2:
+    card("⚡ Load Demand", f"{res['load_kw']} kW", "red")
+with c3:
+    card("🔋 Battery SoC", f"{res['battery_soc']}%", "blue")
+with c4:
+    card("🌿 CO2 Avoided", f"{res['co2_saved_kg']} kg", "purple")
 
-# ================= FINANCIAL METRICS =================
+# ================= ENERGY FLOW =================
+flow = res.get("energy_flow", {})
+st.markdown("### 🔄 Energy Flow Accounting")
+e1, e2, e3, e4 = st.columns(4)
+with e1:
+    card("☀️ Solar → Load", f"{flow.get('solar_to_load_kwh', 0)} kWh", "green")
+with e2:
+    card("🔋 Battery → Load", f"{flow.get('battery_to_load_kwh', 0)} kWh", "blue")
+with e3:
+    card("🏭 Grid Import", f"{flow.get('grid_import_kwh', 0)} kWh", "red")
+with e4:
+    card("☀️ Solar → Battery", f"{flow.get('solar_to_battery_kwh', 0)} kWh", "purple")
+
+# ================= FINANCIALS =================
 st.markdown("---")
-st.markdown("### 📊 Real-Time Financial Performance")
+st.markdown("### 📊 Real-time Financial Performance")
 f_col1, f_col2, f_col3 = st.columns(3)
-with f_col1: card("💰 Instant Hourly Savings", f"{financials['money_saved_mad']} MAD", "green")
-with f_col2: card("📉 Current Net Bill", f"{financials['current_bill_mad']} MAD", "red")
-with f_col3: card("⚡ Solar Coverage Rate", f"{round((res['solar_kw']/(res['load_kw']+0.01))*100, 1)}%", "blue")
+with f_col1:
+    card("💰 Money Saved (Hourly)", f"{financials['money_saved_mad']} MAD", "green")
+with f_col2:
+    card("📉 Net Grid Bill", f"{financials['current_bill_mad']} MAD", "red")
+with f_col3:
+    payback_text = f"{financials.get('payback_years')} Yrs" if financials.get("payback_years") is not None else "N/A"
+    roi_text = f"({financials.get('roi_percentage')}%)" if financials.get("roi_percentage") is not None else ""
+    card("🏦 Est. Payback / ROI", f"{payback_text} {roi_text}", "blue")
 
-# ================= RELAYS =================
+# ================= ZONES =================
 st.markdown("---")
-st.subheader("🔌 Automated Relays & Priority Dispatch")
+st.subheader("🔌 Automated Relays Status")
 if res["decisions"]:
     cols = st.columns(len(res["decisions"]))
     for i, (name, status) in enumerate(res["decisions"].items()):
@@ -268,59 +324,75 @@ if res["decisions"]:
         with cols[i]:
             card(name, status, color)
 
-# ================= PREDICTIONS & AI =================
+# ================= ML PREDICTIONS =================
 st.markdown("---")
-st.subheader("🔮 Predictive Analytics & AI Forecasting")
+st.subheader("🔮 AI Demand Forecasting & Daily Projection")
 col_p1, col_p2 = st.columns([1, 2])
 
 with col_p1:
-    st.markdown("#### Forecast Parameters (Tomorrow)")
-    next_temp = st.slider("Expected Temperature (°C)", 10, 45, int(temp) + 1)
-    next_clouds = st.slider("Expected Cloudiness (0-10)", 0, 10, int(clouds))
+    st.markdown("#### الأرصاد المتوقعة لغد 🌤️")
+    next_temp = st.slider("الحرارة المتوقعة (°C)", 10, 45, int(temp) + 1)
+    next_clouds = st.slider("الغيوم (0-10)", 0, 10, int(clouds))
     predicted_total, hourly_curve = system.forecast_tomorrow_demand(next_temp, next_clouds)
-    st.metric(label="📊 Estimated Daily Demand Peak", value=f"{predicted_total} kW")
+    st.metric(label="📊 الحمل المتوسط المتوقع لغد", value=f"{predicted_total} kW")
 
 with col_p2:
-    forecast_df = pd.DataFrame({
-        "Hour": [f"{h:02d}:00" for h in range(24)],
-        "Predicted Demand (kW)": hourly_curve
-    })
-    fig = px.line(
-        forecast_df, x="Hour", y="Predicted Demand (kW)",
-        title="📈 24-Hour Predictive Load Profile",
-        template="plotly_dark", color_discrete_sequence=["#8B5CF6"]
+    forecast_df = pd.DataFrame(
+        {
+            "Hour": [f"{h:02d}:00" for h in range(24)],
+            "Predicted Load (kW)": hourly_curve,
+        }
     )
+    fig = px.line(
+        forecast_df,
+        x="Hour",
+        y="Predicted Load (kW)",
+        title="📈 منحنى الحمل المتوقع لـ 24 ساعة القادمة",
+        template="plotly_dark",
+        color_discrete_sequence=["#8B5CF6"],
+    )
+    fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
     st.plotly_chart(fig, use_container_width=True)
 
-    hourly_solar_curve = [system.get_solar_kw(h, next_clouds) for h in range(24)]
+    # حساب التوقعات المالية بناءً على منحنى 24 ساعة كامل
+    hourly_solar_curve = [
+        system.get_solar_kw(h, next_clouds)
+        for h in range(24)
+    ]
     projection = system.calculate_daily_financial_projection(
         hourly_load_kw=hourly_curve,
         hourly_solar_kw=hourly_solar_curve,
     )
 
-    st.markdown("#### 💰 24h Projections Strategy")
+    st.markdown("#### 💰 24h Daily Financial Projection")
     p1, p2, p3, p4 = st.columns(4)
-    with p1: card("Daily Savings", f"{projection['daily_savings_mad']} MAD", "green")
-    with p2: card("Est. Annual Savings", f"{projection['annual_savings_mad']} MAD", "green")
-    with p3: card("Payback Period", f"{projection.get('payback_years', 'N/A')} Yrs", "blue")
-    with p4: card("Est. ROI", f"{projection.get('roi_percentage', 'N/A')}%", "purple")
+    with p1:
+        card("Daily Savings", f"{projection['daily_savings_mad']} MAD", "green")
+    with p2:
+        card("Annualized Savings", f"{projection['annual_savings_mad']} MAD", "green")
+    with p3:
+        payback = projection.get("payback_years")
+        card("Payback", f"{payback} yrs" if payback is not None else "N/A", "blue")
+    with p4:
+        roi = projection.get("roi_percentage")
+        card("Annualized ROI", f"{roi}%" if roi is not None else "N/A", "purple")
 
-# ================= MAP & AUDIT REPORT =================
+# ================= MAP & AUDIT =================
 st.markdown("---")
-st.subheader("📍 Geolocation Node Map")
+st.subheader("📍 Enterprise Location & Edge Node")
 m = folium.Map(location=[30.4278, -9.5981], zoom_start=12)
 folium.Marker(
     [30.4278, -9.5981],
-    tooltip=f"{user['company']} Node",
-    popup=f"AI Controller Hub: {user['company']}"
+    tooltip="AI Edge Gateway ☀️",
+    popup=f"{user['company']} Microgrid Hub",
 ).add_to(m)
-st_folium(m, width=1200, height=320, key="enterprise_map")
+st_folium(m, use_container_width=True, height=350, key="main_map")
 
 st.markdown("---")
 pdf_data = generate_pdf(user, res)
 st.download_button(
-    label="⬇️ Download Enterprise Audit Report (PDF)",
+    label="⬇️ Download Financial & Technical Audit Report (PDF)",
     data=pdf_data,
-    file_name="enterprise_audit.pdf",
-    mime="application/pdf"
+    file_name=f"{user['company'].lower().replace(' ', '_')}_audit.pdf",
+    mime="application/pdf",
 )
