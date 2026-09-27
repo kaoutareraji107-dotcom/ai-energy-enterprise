@@ -2,9 +2,11 @@ import streamlit as st
 import datetime
 import requests
 import pandas as pd
+import numpy as np
 import os
 from fpdf import FPDF
 import plotly.express as px
+import plotly.graph_objects as go
 import folium
 from streamlit_folium import st_folium
 
@@ -358,25 +360,75 @@ with col_predict_1:
     next_temp = st.slider("درجة الحرارة المتوقعة لغد (°C)", 10, 45, int(temp) + 1)
     next_clouds = st.slider("كثافة الغيوم المتوقعة لغد (0-10)", 0, 10, int(clouds))
     
-    predicted_total, hourly_curve = system.forecast_tomorrow_demand(next_temp, next_clouds)
+    predicted_avg, hourly_curve = system.forecast_tomorrow_demand(next_temp, next_clouds)
     
-    st.metric(label="📊 إجمالي الحمل المتوقع (بناء على الطقس والـ ML)", value=f"{predicted_total} kW/h")
+    st.metric(label="📊 معدل الحمل المتوقع لغد (AI)", value=f"{predicted_avg} kW")
+
+    # ---- شفافية حقيقية على دقة الموديل (ماشي رقم ثابت) ----
+    if system.model_score is not None:
+        if system.model_score >= 70:
+            acc_icon = "🟢"
+        elif system.model_score >= 40:
+            acc_icon = "🟡"
+        else:
+            acc_icon = "🔴"
+        data_source = "بيانات الاستعمال الحقيقية المسجلة" if system.trained_on_real_data else "بيانات افتراضية (كيتعلم من الاستعمال الحقيقي مع الوقت)"
+        st.caption(f"{acc_icon} دقة النموذج (Model Accuracy): **{system.model_score}%** — مبني على {data_source}")
 
 with col_predict_2:
-    forecast_df = pd.DataFrame({
-        "Hour": [f"{h}:00" for h in range(24)],
-        "Predicted Load (kW)": hourly_curve
-    })
-    
-    fig_forecast = px.line(
-        forecast_df, 
-        x="Hour", 
-        y="Predicted Load (kW)",
-        title="📈 المنحنى البياني التنبئي للحمل على مدار 24 ساعة القادمة",
-        template="plotly_dark",
-        color_discrete_sequence=["#8B5CF6"]
+    historical_hourly = system.get_historical_hourly_average()
+    hours_numeric = list(range(24))
+
+    fig_forecast = go.Figure()
+
+    # تظليل ساعات الذروة (التعرفة غالية 17h-22h)
+    fig_forecast.add_vrect(
+        x0=17, x1=22,
+        fillcolor="#ff4b4b", opacity=0.12, line_width=0,
+        annotation_text="⏰ ساعات الذروة", annotation_position="top left",
+        annotation_font_color="#ff4b4b"
     )
-    fig_forecast.update_traces(mode="lines+markers")
+
+    # المعدل التاريخي الحقيقي - كيبان غير إلى كانت الداتا كافية
+    if historical_hourly is not None:
+        fig_forecast.add_trace(go.Scatter(
+            x=hours_numeric, y=historical_hourly,
+            mode="lines", name="📊 المعدل التاريخي الحقيقي",
+            line=dict(color="rgba(255,255,255,0.35)", width=2, dash="dot")
+        ))
+
+    # توقع الذكاء الاصطناعي لغد
+    fig_forecast.add_trace(go.Scatter(
+        x=hours_numeric, y=hourly_curve,
+        mode="lines+markers", name="🤖 توقع AI لغد",
+        line=dict(color="#8B5CF6", width=3),
+        marker=dict(size=6, color="#00CFFF")
+    ))
+
+    peak_hour = int(np.argmax(hourly_curve))
+    fig_forecast.add_annotation(
+        x=peak_hour, y=hourly_curve[peak_hour],
+        text=f"⚡ الذروة: {hourly_curve[peak_hour]} kW",
+        showarrow=True, arrowhead=2, arrowcolor="#00FF9C",
+        font=dict(color="#00FF9C"),
+        ay=-40
+    )
+
+    fig_forecast.update_layout(
+        title="📈 توقع الحمل على مدار 24 ساعة (AI متعلم من الساعة + الطقس)",
+        template="plotly_dark",
+        xaxis=dict(
+            title="الساعة",
+            tickmode="array",
+            tickvals=hours_numeric,
+            ticktext=[f"{h}:00" for h in hours_numeric]
+        ),
+        yaxis=dict(title="الحمل المتوقع (kW)"),
+        legend=dict(orientation="h", yanchor="bottom", y=1.05, xanchor="right", x=1),
+        hovermode="x unified",
+        margin=dict(t=80)
+    )
+
     st.plotly_chart(fig_forecast, use_container_width=True)
 
 # ================= MAP =================
