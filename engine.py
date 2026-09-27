@@ -9,6 +9,7 @@ import bcrypt
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestRegressor
+from sklearn.model_selection import train_test_split
 
 # =====================================================================
 # ================= AUTHENTICATION (Multi-user Security) =============
@@ -156,6 +157,8 @@ class SmartCityStrategic:
         self.current_charge = 2500.0    # kWh
         self.max_solar_peak = 2200.0    # kW
         self.model = None
+        self.model_score = None   # دقة النموذج (%) محسوبة بـ train/test حقيقي
+        self.trained_on_real_data = False
         self.init_ml_model()
 
     def add_zone(self, zone):
@@ -188,46 +191,113 @@ class SmartCityStrategic:
         }
 
     # ================= MACHINE LEARNING ENGINE =================
+    def _diurnal_factor(self, hour):
+        """الشكل الطبيعي لمنحنى الاستهلاك عبر اليوم (نهار أعلى، ليل أقل)."""
+        if 8 <= hour <= 18:
+            return 0.9 + (math.sin(hour * math.pi / 12) * 0.1)
+        return 0.45
+
+    def _generate_synthetic_training_data(self, n_days=90):
+        """
+        بيانات تدريب افتراضية (يستعملها الموديل غير كي ماكانش عندنا Log
+        كافي من الاستعمال الحقيقي). كل يوم عندو طقس عشوائي، وكل ساعة
+        فيه عندها حمل يتبع منحنى نهاري + تأثير الحرارة والغيوم.
+        """
+        np.random.seed(42)
+        rows = []
+        for _ in range(n_days):
+            day_temp = np.random.uniform(15, 42)
+            day_clouds = np.random.uniform(0, 10)
+            base_load = 500 + (day_temp * 30) + (day_clouds * 20)
+            for h in range(24):
+                load = base_load * self._diurnal_factor(h) + np.random.normal(0, 15)
+                rows.append({
+                    "hour": h,
+                    "temp": day_temp,
+                    "clouds": day_clouds,
+                    "load": max(150.0, load),
+                })
+        return pd.DataFrame(rows)
+
     def init_ml_model(self, data_file="energy_log.csv"):
-        """تدريب نموذج التنبؤ مرة واحدة عند التشغيل"""
+        """
+        تدريب نموذج التنبؤ الحقيقي: [الساعة، الحرارة، الغيوم] -> الحمل.
+        كيستعمل بيانات الاستعمال الحقيقية (energy_log.csv) إلى كانت كافية،
+        وإلا كيرجع لبيانات افتراضية واقعية. كيحسب كذلك دقة حقيقية بـ
+        train/test split (ماشي رقم ثابت).
+        """
+        df = None
+        self.trained_on_real_data = False
+
         if os.path.exists(data_file):
             try:
-                df = pd.read_csv(data_file)
-                if len(df) >= 10 and 'temp' in df.columns and 'clouds' in df.columns:
-                    X = df[['temp', 'clouds']].values
-                    y = df['load'].values
-                    self.model = RandomForestRegressor(n_estimators=50, random_state=42)
-                    self.model.fit(X, y)
-                    return
+                log_df = pd.read_csv(data_file)
+                required_cols = {"temp", "clouds", "load", "timestamp"}
+                if len(log_df) >= 30 and required_cols.issubset(log_df.columns):
+                    log_df = log_df.dropna(subset=list(required_cols))
+                    log_df["hour"] = pd.to_datetime(log_df["timestamp"]).dt.hour
+                    df = log_df[["hour", "temp", "clouds", "load"]]
+                    self.trained_on_real_data = True
             except Exception:
-                pass
-        
-        # بيانات افتراضية للتدريب ف حالة عدم وجود ملف داتا كافي
-        np.random.seed(42)
-        X = np.random.uniform(15, 42, (150, 2))
-        y = 500 + (X[:, 0] * 30) + (X[:, 1] * 20) + np.random.normal(0, 25, 150)
-        self.model = RandomForestRegressor(n_estimators=50, random_state=42)
+                df = None
+
+        if df is None or len(df) < 30:
+            df = self._generate_synthetic_training_data()
+            self.trained_on_real_data = False
+
+        X = df[["hour", "temp", "clouds"]].values
+        y = df["load"].values
+
+        # ---- تقييم الدقة الحقيقي (train/test split) ----
+        try:
+            X_train, X_test, y_train, y_test = train_test_split(
+                X, y, test_size=0.2, random_state=42
+            )
+            eval_model = RandomForestRegressor(n_estimators=150, max_depth=10, random_state=42)
+            eval_model.fit(X_train, y_train)
+            r2 = eval_model.score(X_test, y_test)
+            self.model_score = round(max(0.0, r2) * 100.0, 1)
+        except Exception:
+            self.model_score = None
+
+        # ---- تدريب الموديل النهائي على كل الداتا ----
+        self.model = RandomForestRegressor(n_estimators=150, max_depth=10, random_state=42)
         self.model.fit(X, y)
 
     def forecast_tomorrow_demand(self, tomorrow_temp, tomorrow_clouds):
+        """
+        كيتوقع الحمل ساعة بساعة لغد بناء على الموديل المدرب (ماشي منحنى
+        ثابت + عشوائية). كيرجع (المعدل اليومي المتوقع، القيم الـ24 ساعة).
+        """
         if self.model is None:
             self.init_ml_model()
 
-        input_data = np.array([[tomorrow_temp, tomorrow_clouds]])
-        prediction = float(self.model.predict(input_data)[0])
-
-        hours = list(range(24))
         hourly_forecast = []
-        for h in hours:
-            if 8 <= h <= 18:
-                time_factor = 0.9 + (math.sin(h * math.pi / 12) * 0.1)
-            else:
-                time_factor = 0.45
+        for h in range(24):
+            pred = float(self.model.predict([[h, tomorrow_temp, tomorrow_clouds]])[0])
+            hourly_forecast.append(round(max(150.0, pred), 2))
 
-            hourly_load = prediction * time_factor + np.random.normal(0, 10)
-            hourly_forecast.append(round(max(150.0, hourly_load), 2))
+        daily_avg = round(float(np.mean(hourly_forecast)), 2)
+        return daily_avg, hourly_forecast
 
-        return round(prediction, 2), hourly_forecast
+    def get_historical_hourly_average(self, data_file="energy_log.csv"):
+        """
+        المعدل الحقيقي للاستهلاك حسب الساعة، محسوب من الـ Log الفعلي.
+        كيرجع None إلى ماكانتش الداتا كافية (باش المبيان ما يوريش خط مزيف).
+        """
+        if not os.path.exists(data_file):
+            return None
+        try:
+            df = pd.read_csv(data_file)
+            if len(df) < 24 or not {"timestamp", "load"}.issubset(df.columns):
+                return None
+            df["hour"] = pd.to_datetime(df["timestamp"]).dt.hour
+            hourly = df.groupby("hour")["load"].mean().reindex(range(24))
+            if hourly.isna().sum() > 12:  # ناقصة بزاف ساعات باش تكون معبرة
+                return None
+            return hourly.interpolate(limit_direction="both").round(2).tolist()
+        except Exception:
+            return None
 
     # ================= REAL SOLAR MODEL =================
     def get_solar(self, hour, clouds):
